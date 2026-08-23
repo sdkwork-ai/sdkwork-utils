@@ -8,104 +8,125 @@
     "registry": "https://registry.npmjs.org/"
   },
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
     },
     "./bloom": {
-      "types": "./dist/bloom.d.ts",
-      "import": "./dist/bloom.js"
+      "types": "./src/bloom.ts",
+      "import": "./src/bloom.ts",
+      "default": "./src/bloom.ts"
     },
     "./boolean": {
-      "types": "./dist/boolean.d.ts",
-      "import": "./dist/boolean.js"
+      "types": "./src/boolean.ts",
+      "import": "./src/boolean.ts",
+      "default": "./src/boolean.ts"
     },
     "./bytes": {
-      "types": "./dist/bytes.d.ts",
-      "import": "./dist/bytes.js"
+      "types": "./src/bytes.ts",
+      "import": "./src/bytes.ts",
+      "default": "./src/bytes.ts"
     },
     "./collection": {
-      "types": "./dist/collection.d.ts",
-      "import": "./dist/collection.js"
+      "types": "./src/collection.ts",
+      "import": "./src/collection.ts",
+      "default": "./src/collection.ts"
     },
     "./compare": {
-      "types": "./dist/compare.d.ts",
-      "import": "./dist/compare.js"
+      "types": "./src/compare.ts",
+      "import": "./src/compare.ts",
+      "default": "./src/compare.ts"
     },
     "./crypto": {
-      "types": "./dist/crypto.d.ts",
-      "import": "./dist/crypto.js"
+      "types": "./src/crypto.ts",
+      "import": "./src/crypto.ts",
+      "default": "./src/crypto.ts"
     },
     "./currency": {
-      "types": "./dist/currency.d.ts",
-      "import": "./dist/currency.js"
+      "types": "./src/currency.ts",
+      "import": "./src/currency.ts",
+      "default": "./src/currency.ts"
     },
     "./datetime": {
-      "types": "./dist/datetime.d.ts",
-      "import": "./dist/datetime.js"
+      "types": "./src/datetime.ts",
+      "import": "./src/datetime.ts",
+      "default": "./src/datetime.ts"
     },
     "./encoding": {
-      "types": "./dist/encoding.d.ts",
-      "import": "./dist/encoding.js"
+      "types": "./src/encoding.ts",
+      "import": "./src/encoding.ts",
+      "default": "./src/encoding.ts"
     },
     "./gatewayEndpoint": {
-      "types": "./dist/gatewayEndpoint.d.ts",
-      "import": "./dist/gatewayEndpoint.js"
+      "types": "./src/gatewayEndpoint.ts",
+      "import": "./src/gatewayEndpoint.ts",
+      "default": "./src/gatewayEndpoint.ts"
     },
     "./gatewayToolSnippets": {
-      "types": "./dist/gatewayToolSnippets.d.ts",
-      "import": "./dist/gatewayToolSnippets.js"
+      "types": "./src/gatewayToolSnippets.ts",
+      "import": "./src/gatewayToolSnippets.ts",
+      "default": "./src/gatewayToolSnippets.ts"
     },
     "./i18n": {
-      "types": "./dist/i18n.d.ts",
-      "import": "./dist/i18n.js"
+      "types": "./src/i18n.ts",
+      "import": "./src/i18n.ts",
+      "default": "./src/i18n.ts"
     },
     "./money": {
-      "types": "./dist/money.d.ts",
-      "import": "./dist/money.js"
+      "types": "./src/money.ts",
+      "import": "./src/money.ts",
+      "default": "./src/money.ts"
     },
     "./id": {
-      "types": "./dist/id.d.ts",
-      "import": "./dist/id.js"
+      "types": "./src/id.ts",
+      "import": "./src/id.ts",
+      "default": "./src/id.ts"
     },
     "./number": {
-      "types": "./dist/number.d.ts",
-      "import": "./dist/number.js"
+      "types": "./src/number.ts",
+      "import": "./src/number.ts",
+      "default": "./src/number.ts"
     },
     "./object": {
-      "types": "./dist/object.d.ts",
-      "import": "./dist/object.js"
+      "types": "./src/object.ts",
+      "import": "./src/object.ts",
+      "default": "./src/object.ts"
     },
     "./optional": {
-      "types": "./dist/optional.d.ts",
-      "import": "./dist/optional.js"
+      "types": "./src/optional.ts",
+      "import": "./src/optional.ts",
+      "default": "./src/optional.ts"
     },
     "./pagination": {
-      "types": "./dist/pagination.d.ts",
-      "import": "./dist/pagination.js"
+      "types": "./src/pagination.ts",
+      "import": "./src/pagination.ts",
+      "default": "./src/pagination.ts"
     },
     "./path": {
-      "types": "./dist/path.d.ts",
-      "import": "./dist/path.js"
+      "types": "./src/path.ts",
+      "import": "./src/path.ts",
+      "default": "./src/path.ts"
     },
     "./result": {
-      "types": "./dist/result.d.ts",
-      "import": "./dist/result.js"
+      "types": "./src/result.ts",
+      "import": "./src/result.ts",
+      "default": "./src/result.ts"
     },
     "./string": {
-      "types": "./dist/string.d.ts",
-      "import": "./dist/string.js"
+      "types": "./src/string.ts",
+      "import": "./src/string.ts",
+      "default": "./src/string.ts"
     },
     "./validation": {
-      "types": "./dist/validation.d.ts",
-      "import": "./dist/validation.js"
+      "types": "./src/validation.ts",
+      "import": "./src/validation.ts",
+      "default": "./src/validation.ts"
     }
   },
   "files": [
-    "dist"
+    "src"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -114,6 +135,5 @@
   "devDependencies": {
     "@types/node": "^22.10.2",
     "typescript": "^5.7.2"
-  },
-  "module": "./dist/index.js"
+  }
 }
