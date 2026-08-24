@@ -12,10 +12,22 @@ export function randomBytes(length: number): Uint8Array {
   return bytes;
 }
 
+/**
+ * RFC 4122 version-4 UUID.
+ *
+ * Prefer `crypto.randomUUID` when it is a real function (secure contexts).
+ * Fall back to `getRandomValues` for HTTP / older hosts / broken shims so
+ * browser admin consoles never crash on create/idempotency flows.
+ */
 export function randomUuid(): string {
   const crypto = getCrypto();
-  if (crypto.randomUUID) {
-    return crypto.randomUUID();
+  if (typeof crypto.randomUUID === "function") {
+    try {
+      return crypto.randomUUID.call(crypto);
+    } catch {
+      // Non-secure contexts and some polyfills expose a non-callable or
+      // throwing randomUUID; continue with getRandomValues.
+    }
   }
 
   const bytes = randomBytes(16);

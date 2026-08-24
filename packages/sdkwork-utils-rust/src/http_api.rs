@@ -548,7 +548,7 @@ where
     deserializer.deserialize_any(OptU64Visitor)
 }
 
-fn deserialize_option_query_i32<'de, D>(deserializer: D) -> Result<Option<i32>, D::Error>
+pub fn deserialize_option_query_i32<'de, D>(deserializer: D) -> Result<Option<i32>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -606,6 +606,57 @@ where
     }
 
     deserializer.deserialize_any(OptI32Visitor)
+}
+
+/// Deserialize optional HTTP query strings; empty or whitespace-only values become `None`.
+pub fn deserialize_option_query_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct OptStringVisitor;
+
+    impl Visitor<'_> for OptStringVisitor {
+        type Value = Option<String>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("an optional string query parameter")
+        }
+
+        fn visit_none<E>(self) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(None)
+        }
+
+        fn visit_unit<E>(self) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(None)
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(trimmed.to_owned()))
+            }
+        }
+
+        fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            self.visit_str(&value)
+        }
+    }
+
+    deserializer.deserialize_any(OptStringVisitor)
 }
 
 /// Standard cursor/offset list query (`page_size` HTTP query wire).

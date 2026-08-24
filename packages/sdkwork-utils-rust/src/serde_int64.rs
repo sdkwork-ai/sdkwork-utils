@@ -40,6 +40,84 @@ where
     parse_strict(&raw).map_err(serde::de::Error::custom)
 }
 
+/// HTTP query 边界的 `Option<i64>` helper：空串视为 `None`，避免
+/// `operator_id=` 之类的前端/代理占位参数触发 Query 提取 40002。
+pub mod option_query {
+    use super::parse_strict;
+    use serde::de::Error as _;
+    use serde::de::{self, Unexpected, Visitor};
+    use serde::{Deserializer, Serializer};
+    use std::fmt;
+
+    pub fn serialize<S>(value: &Option<i64>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match value {
+            Some(v) => serializer.collect_str(v),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<i64>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct OptI64QueryVisitor;
+
+        impl Visitor<'_> for OptI64QueryVisitor {
+            type Value = Option<i64>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("an optional signed integer query parameter")
+            }
+
+            fn visit_none<E>(self) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(None)
+            }
+
+            fn visit_unit<E>(self) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(None)
+            }
+
+            fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(Some(value))
+            }
+
+            fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                i64::try_from(value)
+                    .map(Some)
+                    .map_err(|_| E::invalid_value(Unexpected::Unsigned(value), &self))
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                let trimmed = value.trim();
+                if trimmed.is_empty() {
+                    return Ok(None);
+                }
+                parse_strict(trimmed).map(Some).map_err(E::custom)
+            }
+        }
+
+        deserializer.deserialize_any(OptI64QueryVisitor)
+    }
+}
+
 /// `Option<i64>` 的伴生 helper：序列化 / 反序列化 None 与 Some(i64)。
 pub mod option {
     use super::parse_strict;
@@ -189,5 +267,25 @@ mod tests {
         assert_eq!(json, r#"{"value":null}"#);
         let parsed: OptionalWrapper = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, wrapper);
+    }
+
+    #[derive(Serialize, Deserialize, PartialEq, Debug)]
+    struct OptionalQueryWrapper {
+        #[serde(with = "super::option_query", default)]
+        value: Option<i64>,
+    }
+
+    #[test]
+    fn optional_query_treats_empty_string_as_none() {
+        let parsed: OptionalQueryWrapper =
+            serde_urlencoded::from_str("value=").expect("empty query value");
+        assert_eq!(parsed.value, None);
+    }
+
+    #[test]
+    fn optional_query_parses_decimal_string() {
+        let parsed: OptionalQueryWrapper =
+            serde_urlencoded::from_str("value=42").expect("numeric query value");
+        assert_eq!(parsed.value, Some(42));
     }
 }
