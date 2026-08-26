@@ -44,7 +44,6 @@ where
 /// `operator_id=` 之类的前端/代理占位参数触发 Query 提取 40002。
 pub mod option_query {
     use super::parse_strict;
-    use serde::de::Error as _;
     use serde::de::{self, Unexpected, Visitor};
     use serde::{Deserializer, Serializer};
     use std::fmt;
