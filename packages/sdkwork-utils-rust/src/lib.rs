@@ -25,6 +25,7 @@ pub mod result;
 pub mod serde_int64;
 pub mod serde_uint64;
 pub mod string;
+pub mod decimal_math;
 pub mod token_bank;
 pub mod trusted_proxy;
 pub mod validation;
@@ -54,6 +55,7 @@ pub use result::*;
 // designed to be used via their full module path as serde `with` attributes:
 //   #[serde(with = "sdkwork_utils_rust::serde_int64")]
 pub use string::*;
+pub use decimal_math::*;
 pub use token_bank::*;
 pub use trusted_proxy::*;
 pub use validation::*;
