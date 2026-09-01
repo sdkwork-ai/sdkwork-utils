@@ -88,3 +88,6 @@ Thumbs.db
 **/src/**/*.d.ts
 # Runtime-generated environment configuration
 **/public/runtime-env.json
+
+# --- Compiled TypeScript declaration output (only .ts source is tracked) ---
+packages/sdkwork-utils-typescript/src/**/*.d.ts
