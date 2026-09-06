@@ -1,9 +1,9 @@
 # @sdkwork/utils
 
-Domain: shared utilities  
-Capability: cross-language common helpers  
-Package type: library  
-Status: standard  
+Domain: shared utilities
+Capability: cross-language common helpers
+Package type: library
+Status: standard
 Version: 0.11.0
 
 TypeScript / Node implementation of the SDKWork utils contract.
