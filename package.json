@@ -5,7 +5,9 @@
   "version": "0.11.0",
   "description": "SDKWork cross-language utility libraries",
   "scripts": {
-    "stop": "node ../sdkwork-specs/tools/stop-sdkwork-workspace-processes.mjs --workspace .",    "verify": "node scripts/verify-contract.mjs && node scripts/sync-conformance-fixtures.mjs && node scripts/check-modules.mjs && node scripts/check-typescript-exports.mjs && node scripts/audit-conformance-coverage.mjs && node scripts/verify.mjs",
+    "stop": "node ../sdkwork-specs/tools/stop-sdkwork-workspace-processes.mjs --workspace .",
+    "check:i18n-standard": "node ../sdkwork-specs/tools/check-i18n-standard.mjs --root .",
+    "verify": "node scripts/verify-contract.mjs && node scripts/sync-conformance-fixtures.mjs && node scripts/check-modules.mjs && node scripts/check-typescript-exports.mjs && node scripts/audit-conformance-coverage.mjs && node scripts/verify.mjs && pnpm check:i18n-standard",
     "verify:contract": "node scripts/verify-contract.mjs",
     "verify:modules": "node scripts/check-modules.mjs",
     "verify:typescript-exports": "node scripts/check-typescript-exports.mjs",
