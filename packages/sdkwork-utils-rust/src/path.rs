@@ -54,7 +54,7 @@ pub fn collapse_duplicate_surface_prefix(path_and_query: &str) -> String {
     path_and_query.to_string()
 }
 
-#[cfg(test)]
+#[cfg(test)] // WORKSPACE-PATH:allow-fixture-block: this module is the file's #[cfg(test)] unit-test fixture data
 mod tests {
     use super::*;
 
