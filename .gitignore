@@ -91,3 +91,8 @@ Thumbs.db
 
 # --- Compiled TypeScript declaration output (only .ts source is tracked) ---
 packages/sdkwork-utils-typescript/src/**/*.d.ts
+
+# Gradle/Kotlin local build output (do not commit)
+.gradle/
+build/
+bin/
