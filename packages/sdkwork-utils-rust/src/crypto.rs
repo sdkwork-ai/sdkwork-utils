@@ -18,6 +18,13 @@ pub fn sha256_hash(value: &[u8]) -> String {
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
+/// The raw 32-byte SHA-256 digest, for callers that need to encode it
+/// themselves (base64url, base64, raw bytes) instead of the hex form
+/// [`sha256_hash`] returns.
+pub fn sha256_digest(value: &[u8]) -> [u8; 32] {
+    Sha256::digest(value).into()
+}
+
 pub fn hmac_sha256(value: &[u8], secret: &[u8]) -> String {
     let mut mac = <HmacSha256 as Mac>::new_from_slice(secret).expect("hmac key");
     mac.update(value);
