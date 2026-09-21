@@ -24,6 +24,7 @@ pub mod rate_limit;
 pub mod result;
 pub mod serde_int64;
 pub mod serde_uint64;
+pub mod service_base_url;
 pub mod string;
 pub mod decimal_math;
 pub mod token_bank;
@@ -56,6 +57,7 @@ pub use result::*;
 //   #[serde(with = "sdkwork_utils_rust::serde_int64")]
 pub use string::*;
 pub use decimal_math::*;
+pub use service_base_url::*;
 pub use token_bank::*;
 pub use trusted_proxy::*;
 pub use validation::*;

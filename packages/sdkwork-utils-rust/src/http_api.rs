@@ -31,6 +31,10 @@ pub enum SdkWorkResultCode {
     NotFound = 40401,
     MethodNotAllowed = 40501,
     RequestTimeout = 40801,
+    /// The wallet/credits/plan backing the request cannot fund it and the caller
+    /// can self-heal by recharging. 402 (Payment Required) rather than a 5xx,
+    /// so clients offer a funding entry point instead of a retry hint.
+    InsufficientBalance = 40201,
     Conflict = 40901,
     Gone = 41001,
     /// A PSP (payment service provider) rejected the checkout/refund request
@@ -76,6 +80,7 @@ impl SdkWorkResultCode {
             Self::NotFound => "NOT_FOUND",
             Self::MethodNotAllowed => "METHOD_NOT_ALLOWED",
             Self::RequestTimeout => "REQUEST_TIMEOUT",
+            Self::InsufficientBalance => "INSUFFICIENT_BALANCE",
             Self::Conflict => "CONFLICT",
             Self::Gone => "GONE",
             Self::PaymentGatewayRejected => "PAYMENT_GATEWAY_REJECTED",
@@ -112,6 +117,7 @@ impl SdkWorkResultCode {
             Self::NotFound => 404,
             Self::MethodNotAllowed => 405,
             Self::RequestTimeout => 408,
+            Self::InsufficientBalance => 402,
             Self::Conflict => 409,
             Self::Gone => 410,
             Self::PaymentGatewayRejected => 400,
@@ -147,6 +153,7 @@ impl SdkWorkResultCode {
             Self::NotFound => "Not found",
             Self::MethodNotAllowed => "Method not allowed",
             Self::RequestTimeout => "Request timeout",
+            Self::InsufficientBalance => "Insufficient balance",
             Self::Conflict => "Conflict",
             Self::Gone => "Gone",
             Self::PaymentGatewayRejected => "Payment gateway rejected the request",
