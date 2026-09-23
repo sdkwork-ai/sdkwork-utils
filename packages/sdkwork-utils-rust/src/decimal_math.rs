@@ -71,9 +71,7 @@ impl std::error::Error for DecimalMathError {}
 type MathResult<T> = Result<T, DecimalMathError>;
 
 fn scale_unit(scale: u32) -> Result<ScaledUnits, DecimalMathError> {
-    10i128
-        .checked_pow(scale)
-        .ok_or(DecimalMathError::Overflow)
+    10i128.checked_pow(scale).ok_or(DecimalMathError::Overflow)
 }
 
 /// Parse a signed decimal string into the integer count of `scale`-th units.
@@ -122,8 +120,12 @@ pub fn decimal_to_scaled(
     }
     // Shift into `scale`-N units, rounding only when more digits than `scale`.
     let mut units = if n <= scale {
-        raw.checked_mul(10i128.checked_pow(scale - n).ok_or(DecimalMathError::Overflow)?)
-            .ok_or(DecimalMathError::Overflow)?
+        raw.checked_mul(
+            10i128
+                .checked_pow(scale - n)
+                .ok_or(DecimalMathError::Overflow)?,
+        )
+        .ok_or(DecimalMathError::Overflow)?
     } else {
         let denom = 10i128
             .checked_pow(n - scale)
@@ -164,7 +166,11 @@ fn parse_exact(value: &str) -> MathResult<ExactValue> {
         .parse()
         .map_err(|_| DecimalMathError::InvalidInput(head.to_owned()))?;
     let mut digits = whole
-        .checked_mul(10i128.checked_pow(trimmed.len() as u32).ok_or(DecimalMathError::Overflow)?)
+        .checked_mul(
+            10i128
+                .checked_pow(trimmed.len() as u32)
+                .ok_or(DecimalMathError::Overflow)?,
+        )
         .ok_or(DecimalMathError::Overflow)?;
     if !trimmed.is_empty() {
         let frac: ScaledUnits = trimmed
@@ -182,7 +188,11 @@ fn parse_exact(value: &str) -> MathResult<ExactValue> {
 }
 
 /// Round `num / denom` to an integer using `rounding` (denom must be positive).
-pub fn round_fraction(num: ScaledUnits, denom: ScaledUnits, rounding: DecimalRounding) -> ScaledUnits {
+pub fn round_fraction(
+    num: ScaledUnits,
+    denom: ScaledUnits,
+    rounding: DecimalRounding,
+) -> ScaledUnits {
     if denom <= 0 {
         return num;
     }
@@ -254,7 +264,11 @@ pub fn scaled_to_decimal(units: ScaledUnits, scale: u32) -> MathResult<String> {
             whole.to_string()
         });
     }
-    let fraction_raw = format!("{:0width$}", absolute % unit as u128, width = scale as usize);
+    let fraction_raw = format!(
+        "{:0width$}",
+        absolute % unit as u128,
+        width = scale as usize
+    );
     let fraction = fraction_raw.trim_end_matches('0');
     let sign = if negative { "-" } else { "" };
     if fraction.is_empty() {
@@ -264,7 +278,13 @@ pub fn scaled_to_decimal(units: ScaledUnits, scale: u32) -> MathResult<String> {
     }
 }
 
-fn add_scaled(left: &str, right: &str, scale: u32, rounding: DecimalRounding, negate_right: bool) -> MathResult<String> {
+fn add_scaled(
+    left: &str,
+    right: &str,
+    scale: u32,
+    rounding: DecimalRounding,
+    negate_right: bool,
+) -> MathResult<String> {
     let unit = scale_unit(scale)?;
     let mut left_units = decimal_to_scaled(left, scale, rounding)?;
     let right_units = decimal_to_scaled(right, scale, rounding)?;
@@ -286,19 +306,34 @@ fn add_scaled(left: &str, right: &str, scale: u32, rounding: DecimalRounding, ne
 }
 
 /// Exact decimal addition of two strings scaled to `scale`.
-pub fn decimal_add(left: &str, right: &str, scale: u32, rounding: DecimalRounding) -> MathResult<String> {
+pub fn decimal_add(
+    left: &str,
+    right: &str,
+    scale: u32,
+    rounding: DecimalRounding,
+) -> MathResult<String> {
     add_scaled(left, right, scale, rounding, false)
 }
 
 /// Exact decimal subtraction of two strings scaled to `scale`.
-pub fn decimal_subtract(left: &str, right: &str, scale: u32, rounding: DecimalRounding) -> MathResult<String> {
+pub fn decimal_subtract(
+    left: &str,
+    right: &str,
+    scale: u32,
+    rounding: DecimalRounding,
+) -> MathResult<String> {
     add_scaled(left, right, scale, rounding, true)
 }
 
 /// Exact decimal multiplication of two strings, returning a decimal string
 /// scaled to `scale`. The exact product is computed in integer arithmetic, then
 /// rounded to `scale` with `rounding`. Billing calls `(scale 6, Ceil)`.
-pub fn decimal_multiply(left: &str, right: &str, scale: u32, rounding: DecimalRounding) -> MathResult<String> {
+pub fn decimal_multiply(
+    left: &str,
+    right: &str,
+    scale: u32,
+    rounding: DecimalRounding,
+) -> MathResult<String> {
     let left_exact = parse_exact(left)?;
     let right_exact = parse_exact(right)?;
     let product = left_exact
@@ -309,7 +344,11 @@ pub fn decimal_multiply(left: &str, right: &str, scale: u32, rounding: DecimalRo
     let offset = scale as i32 - product_scale as i32;
     let result_units = if offset >= 0 {
         product
-            .checked_mul(10i128.checked_pow(offset as u32).ok_or(DecimalMathError::Overflow)?)
+            .checked_mul(
+                10i128
+                    .checked_pow(offset as u32)
+                    .ok_or(DecimalMathError::Overflow)?,
+            )
             .ok_or(DecimalMathError::Overflow)?
     } else {
         let denom = 10i128
@@ -322,7 +361,12 @@ pub fn decimal_multiply(left: &str, right: &str, scale: u32, rounding: DecimalRo
 
 /// Exact decimal division `numerator / denominator`, returning a decimal string
 /// scaled to `scale`. Divide-by-zero or malformed input is an error.
-pub fn decimal_divide(numerator: &str, denominator: &str, scale: u32, rounding: DecimalRounding) -> MathResult<String> {
+pub fn decimal_divide(
+    numerator: &str,
+    denominator: &str,
+    scale: u32,
+    rounding: DecimalRounding,
+) -> MathResult<String> {
     let num_exact = parse_exact(numerator)?;
     let den_exact = parse_exact(denominator)?;
     if den_exact.digits == 0 {
@@ -330,16 +374,23 @@ pub fn decimal_divide(numerator: &str, denominator: &str, scale: u32, rounding: 
     }
     let num_power = scale as i32 + den_exact.scale as i32 - num_exact.scale as i32;
     let result_units = if num_power >= 0 {
-        let scaled =
-            num_exact
-                .digits
-                .checked_mul(10i128.checked_pow(num_power as u32).ok_or(DecimalMathError::Overflow)?)
-                .ok_or(DecimalMathError::Overflow)?;
+        let scaled = num_exact
+            .digits
+            .checked_mul(
+                10i128
+                    .checked_pow(num_power as u32)
+                    .ok_or(DecimalMathError::Overflow)?,
+            )
+            .ok_or(DecimalMathError::Overflow)?;
         round_fraction(scaled, den_exact.digits, rounding)
     } else {
         let den_scaled = den_exact
             .digits
-            .checked_mul(10i128.checked_pow((-num_power) as u32).ok_or(DecimalMathError::Overflow)?)
+            .checked_mul(
+                10i128
+                    .checked_pow((-num_power) as u32)
+                    .ok_or(DecimalMathError::Overflow)?,
+            )
             .ok_or(DecimalMathError::Overflow)?;
         round_fraction(num_exact.digits, den_scaled, rounding)
     };
@@ -381,7 +432,10 @@ mod tests {
 
     #[test]
     fn scaled_round_trip_exact() {
-        assert_eq!(decimal_to_scaled("1.5", 6, DecimalRounding::Floor).unwrap(), 1_500_000);
+        assert_eq!(
+            decimal_to_scaled("1.5", 6, DecimalRounding::Floor).unwrap(),
+            1_500_000
+        );
         assert_eq!(
             decimal_to_scaled("0.000704", 12, DecimalRounding::Floor).unwrap(),
             704_000_000
@@ -405,8 +459,14 @@ mod tests {
 
     #[test]
     fn subtract_is_exact() {
-        assert_eq!(decimal_subtract("1", "0.000001", 12, DecimalRounding::HalfUp).unwrap(), "0.999999");
-        assert_eq!(decimal_subtract("1.00", "1", 12, DecimalRounding::HalfUp).unwrap(), "0");
+        assert_eq!(
+            decimal_subtract("1", "0.000001", 12, DecimalRounding::HalfUp).unwrap(),
+            "0.999999"
+        );
+        assert_eq!(
+            decimal_subtract("1.00", "1", 12, DecimalRounding::HalfUp).unwrap(),
+            "0"
+        );
     }
 
     #[test]
@@ -423,8 +483,14 @@ mod tests {
             decimal_divide("0.049280", "0.000704", 12, DecimalRounding::Ceil).unwrap(),
             "70"
         );
-        assert_eq!(decimal_divide("1", "3", 6, DecimalRounding::Ceil).unwrap(), "0.333334");
-        assert_eq!(decimal_divide("1", "3", 6, DecimalRounding::Floor).unwrap(), "0.333333");
+        assert_eq!(
+            decimal_divide("1", "3", 6, DecimalRounding::Ceil).unwrap(),
+            "0.333334"
+        );
+        assert_eq!(
+            decimal_divide("1", "3", 6, DecimalRounding::Floor).unwrap(),
+            "0.333333"
+        );
         assert!(decimal_divide("1", "0", 12, DecimalRounding::HalfUp).is_err());
     }
 
@@ -446,9 +512,18 @@ mod tests {
 
     #[test]
     fn rounding_modes() {
-        assert_eq!(decimal_divide("5", "2", 0, DecimalRounding::HalfUp).unwrap(), "3");
-        assert_eq!(decimal_divide("5", "2", 0, DecimalRounding::HalfEven).unwrap(), "2");
-        assert_eq!(decimal_divide("7", "2", 0, DecimalRounding::HalfEven).unwrap(), "4");
+        assert_eq!(
+            decimal_divide("5", "2", 0, DecimalRounding::HalfUp).unwrap(),
+            "3"
+        );
+        assert_eq!(
+            decimal_divide("5", "2", 0, DecimalRounding::HalfEven).unwrap(),
+            "2"
+        );
+        assert_eq!(
+            decimal_divide("7", "2", 0, DecimalRounding::HalfEven).unwrap(),
+            "4"
+        );
     }
 
     #[test]

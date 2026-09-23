@@ -83,7 +83,9 @@ mod tests {
     #[test]
     fn collapse_duplicate_surface_prefix_preserves_query() {
         assert_eq!(
-            collapse_duplicate_surface_prefix("/app/v3/api/generations/app/v3/api/generations?cursor=abc"),
+            collapse_duplicate_surface_prefix(
+                "/app/v3/api/generations/app/v3/api/generations?cursor=abc"
+            ),
             "/app/v3/api/generations?cursor=abc"
         );
     }

@@ -100,7 +100,9 @@ pub fn decimal_string_to_micro(value: &str) -> Option<i64> {
     let mut micro: i128 = (whole_value as i128) * (MICRO_POINTS_PER_POINT as i128);
     if !fraction_digits.is_empty() {
         let pad = (TOKEN_POINTS_SCALE as usize) - fraction_digits.len();
-        let scaled: i128 = format!("{fraction_digits}{}", "0".repeat(pad)).parse().ok()?;
+        let scaled: i128 = format!("{fraction_digits}{}", "0".repeat(pad))
+            .parse()
+            .ok()?;
         micro += scaled;
     }
 
@@ -132,7 +134,10 @@ mod tests {
         assert_eq!(micro_to_decimal_string(1), "0.000001");
         assert_eq!(micro_to_decimal_string(MICRO_POINTS_PER_POINT), "1");
         assert_eq!(micro_to_decimal_string(MICRO_POINTS_PER_POINT / 2), "0.5");
-        assert_eq!(micro_to_decimal_string(12 * MICRO_POINTS_PER_POINT + 1), "12.000001");
+        assert_eq!(
+            micro_to_decimal_string(12 * MICRO_POINTS_PER_POINT + 1),
+            "12.000001"
+        );
         assert_eq!(micro_to_decimal_string(123 * MICRO_POINTS_PER_POINT), "123");
     }
 
@@ -159,7 +164,15 @@ mod tests {
 
     #[test]
     fn round_trip() {
-        for value in ["0", "1", "1.5", "0.000001", "12.000001", "99.999999", "123456.78901"] {
+        for value in [
+            "0",
+            "1",
+            "1.5",
+            "0.000001",
+            "12.000001",
+            "99.999999",
+            "123456.78901",
+        ] {
             let micro = decimal_string_to_micro(value).unwrap();
             assert_eq!(micro_to_decimal_string(micro), value, "round-trip {value}");
         }

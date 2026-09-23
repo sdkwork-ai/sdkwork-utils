@@ -9,6 +9,7 @@ pub mod compare;
 pub mod crypto;
 pub mod currency;
 pub mod datetime;
+pub mod decimal_math;
 pub mod encoding;
 pub mod http_api;
 pub mod i18n;
@@ -26,7 +27,6 @@ pub mod serde_int64;
 pub mod serde_uint64;
 pub mod service_base_url;
 pub mod string;
-pub mod decimal_math;
 pub mod token_bank;
 pub mod trusted_proxy;
 pub mod validation;
@@ -55,9 +55,9 @@ pub use result::*;
 // They export conflicting `serialize`/`deserialize`/`option` names and are
 // designed to be used via their full module path as serde `with` attributes:
 //   #[serde(with = "sdkwork_utils_rust::serde_int64")]
-pub use string::*;
 pub use decimal_math::*;
 pub use service_base_url::*;
+pub use string::*;
 pub use token_bank::*;
 pub use trusted_proxy::*;
 pub use validation::*;

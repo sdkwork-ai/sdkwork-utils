@@ -449,7 +449,9 @@ mod tests {
     #[test]
     fn into_required_reports_the_in_process_outcome_actionably() {
         let resolved = resolve(&embedded("cloudrouter"));
-        let error = resolved.into_required().expect_err("no base URL in-process");
+        let error = resolved
+            .into_required()
+            .expect_err("no base URL in-process");
         assert_eq!(error.service(), "cloudrouter");
         let message = error.to_string();
         assert!(message.contains("cloudrouter"));
@@ -484,7 +486,10 @@ mod tests {
             mode_of_deployment_profile(Some("  standalone  ")),
             ServiceMode::Embedded
         );
-        assert_eq!(mode_of_deployment_profile(Some("cloud")), ServiceMode::Split);
+        assert_eq!(
+            mode_of_deployment_profile(Some("cloud")),
+            ServiceMode::Split
+        );
         assert_eq!(mode_of_deployment_profile(Some("test")), ServiceMode::Split);
         // An absent or blank profile is a split deployment: a surface is
         // composed in-process only when the composition root says so.
@@ -544,7 +549,10 @@ mod tests {
 
     #[test]
     fn source_labels_are_stable_for_logs_and_problem_details() {
-        assert_eq!(BaseUrlSource::ExplicitOverride.as_str(), "explicit_override");
+        assert_eq!(
+            BaseUrlSource::ExplicitOverride.as_str(),
+            "explicit_override"
+        );
         assert_eq!(
             BaseUrlSource::AuthoredPublicUrl.as_str(),
             "authored_public_url"
