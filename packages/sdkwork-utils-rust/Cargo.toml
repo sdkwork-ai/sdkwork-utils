@@ -12,18 +12,18 @@ workspace = true
 [dependencies]
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
-base64 = "0.22"
+base64 = "0.23"
 rand = "0.8"
 regex = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sha2 = "0.10"
-hmac = "0.12"
+sha2 = "0.11"
+hmac = "0.13"
 urlencoding = "2"
 # 对称加密：AES-256-GCM（机密字段落库加密）
-aes-gcm = "0.10"
+aes-gcm = "0.11"
 # 密钥派生：HKDF-SHA256（替代裸 SHA-256 摘要做密钥）
-hkdf = "0.12"
+hkdf = "0.13"
 # 分布式限流后端（可选）：Redis 原子令牌桶
 redis = { version = "0.27", default-features = false, features = ["tokio-comp", "connection-manager", "script"], optional = true }
 

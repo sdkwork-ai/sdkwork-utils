@@ -2,7 +2,7 @@ use crate::encoding::base64url_encode;
 use aes_gcm::{aead::Aead, Aes256Gcm, KeyInit, Nonce};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use hkdf::Hkdf;
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit as HmacKeyInit, Mac};
 use rand::RngCore;
 use sha2::{Digest, Sha256};
 
@@ -26,7 +26,7 @@ pub fn sha256_digest(value: &[u8]) -> [u8; 32] {
 }
 
 pub fn hmac_sha256(value: &[u8], secret: &[u8]) -> String {
-    let mut mac = <HmacSha256 as Mac>::new_from_slice(secret).expect("hmac key");
+    let mut mac = <HmacSha256 as HmacKeyInit>::new_from_slice(secret).expect("hmac key");
     mac.update(value);
     mac.finalize()
         .into_bytes()
@@ -36,13 +36,13 @@ pub fn hmac_sha256(value: &[u8], secret: &[u8]) -> String {
 }
 
 pub fn hmac_sha256_base64url(value: &[u8], secret: &[u8]) -> String {
-    let mut mac = <HmacSha256 as Mac>::new_from_slice(secret).expect("hmac key");
+    let mut mac = <HmacSha256 as HmacKeyInit>::new_from_slice(secret).expect("hmac key");
     mac.update(value);
     base64url_encode(&mac.finalize().into_bytes())
 }
 
 pub fn verify_hmac_sha256_base64url(value: &[u8], secret: &[u8], signature: &[u8]) -> bool {
-    let mut mac = <HmacSha256 as Mac>::new_from_slice(secret).expect("hmac key");
+    let mut mac = <HmacSha256 as HmacKeyInit>::new_from_slice(secret).expect("hmac key");
     mac.update(value);
     mac.verify_slice(signature).is_ok()
 }
@@ -82,7 +82,8 @@ pub fn aes_gcm_encrypt(key: &[u8], plaintext: &[u8]) -> Result<String, String> {
         .map_err(|error| format!("invalid AES key length: {error}"))?;
     let mut nonce_bytes = [0_u8; AES_GCM_NONCE_LEN];
     rand::thread_rng().fill_bytes(&mut nonce_bytes);
-    let nonce = Nonce::from_slice(&nonce_bytes);
+    let nonce = <&Nonce<<Aes256Gcm as aes_gcm::aead::AeadCore>::NonceSize>>::try_from(&nonce_bytes[..])
+        .expect("aes-gcm nonce length");
     let ciphertext = cipher
         .encrypt(nonce, plaintext)
         .map_err(|error| format!("AES-256-GCM encrypt: {error}"))?;
@@ -103,7 +104,8 @@ pub fn aes_gcm_decrypt(key: &[u8], encoded: &str) -> Result<Vec<u8>, String> {
     let (nonce_bytes, ciphertext) = payload.split_at(AES_GCM_NONCE_LEN);
     let cipher = Aes256Gcm::new_from_slice(key)
         .map_err(|error| format!("invalid AES key length: {error}"))?;
-    let nonce = Nonce::from_slice(nonce_bytes);
+    let nonce = <&Nonce<<Aes256Gcm as aes_gcm::aead::AeadCore>::NonceSize>>::try_from(&nonce_bytes[..])
+        .expect("aes-gcm nonce length");
     cipher
         .decrypt(nonce, ciphertext)
         .map_err(|error| format!("AES-256-GCM decrypt: {error}"))
