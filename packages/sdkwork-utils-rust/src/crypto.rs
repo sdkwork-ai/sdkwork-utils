@@ -82,8 +82,9 @@ pub fn aes_gcm_encrypt(key: &[u8], plaintext: &[u8]) -> Result<String, String> {
         .map_err(|error| format!("invalid AES key length: {error}"))?;
     let mut nonce_bytes = [0_u8; AES_GCM_NONCE_LEN];
     rand::thread_rng().fill_bytes(&mut nonce_bytes);
-    let nonce = <&Nonce<<Aes256Gcm as aes_gcm::aead::AeadCore>::NonceSize>>::try_from(&nonce_bytes[..])
-        .expect("aes-gcm nonce length");
+    let nonce =
+        <&Nonce<<Aes256Gcm as aes_gcm::aead::AeadCore>::NonceSize>>::try_from(&nonce_bytes[..])
+            .expect("aes-gcm nonce length");
     let ciphertext = cipher
         .encrypt(nonce, plaintext)
         .map_err(|error| format!("AES-256-GCM encrypt: {error}"))?;
@@ -104,8 +105,9 @@ pub fn aes_gcm_decrypt(key: &[u8], encoded: &str) -> Result<Vec<u8>, String> {
     let (nonce_bytes, ciphertext) = payload.split_at(AES_GCM_NONCE_LEN);
     let cipher = Aes256Gcm::new_from_slice(key)
         .map_err(|error| format!("invalid AES key length: {error}"))?;
-    let nonce = <&Nonce<<Aes256Gcm as aes_gcm::aead::AeadCore>::NonceSize>>::try_from(&nonce_bytes[..])
-        .expect("aes-gcm nonce length");
+    let nonce =
+        <&Nonce<<Aes256Gcm as aes_gcm::aead::AeadCore>::NonceSize>>::try_from(&nonce_bytes[..])
+            .expect("aes-gcm nonce length");
     cipher
         .decrypt(nonce, ciphertext)
         .map_err(|error| format!("AES-256-GCM decrypt: {error}"))
