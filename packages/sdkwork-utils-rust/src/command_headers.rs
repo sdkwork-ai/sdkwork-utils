@@ -80,7 +80,10 @@ pub fn sdkwork_stable_json_request_hash(
 
 /// Canonical body hash over an already-materialized JSON value.
 #[must_use]
-pub fn sdkwork_stable_canonical_json_request_hash(scope: &str, value: &serde_json::Value) -> String {
+pub fn sdkwork_stable_canonical_json_request_hash(
+    scope: &str,
+    value: &serde_json::Value,
+) -> String {
     sdkwork_stable_command_request_hash(scope, &[&canonical_json_string(value)])
 }
 
@@ -121,8 +124,8 @@ pub fn parse_sdkwork_write_command_headers(
     let idempotency_key = required_header(idempotency_key, SDKWORK_IDEMPOTENCY_KEY_HEADER)?;
     let idempotency_key = validate_idempotency_key(idempotency_key)?;
     let request_hash = required_header(request_hash, SDKWORK_REQUEST_HASH_HEADER)?;
-    let request_no = header_text(request_no)
-        .unwrap_or_else(|| fallback_request_no(&idempotency_key));
+    let request_no =
+        header_text(request_no).unwrap_or_else(|| fallback_request_no(&idempotency_key));
     Ok(SdkWorkWriteCommandHeaders {
         idempotency_key,
         request_hash,
@@ -138,7 +141,10 @@ fn required_header(
 }
 
 fn header_text(value: Option<&str>) -> Option<String> {
-    value.map(str::trim).filter(|value| !value.is_empty()).map(str::to_owned)
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
 }
 
 fn validate_idempotency_key(value: String) -> Result<String, SdkWorkWriteCommandHeaderError> {
@@ -197,13 +203,11 @@ mod tests {
 
     #[test]
     fn parses_required_headers_and_derives_request_no() {
-        let parsed = parse_sdkwork_write_command_headers(
-            Some(" idem-1 "),
-            Some("hash-1"),
-            None,
-            |key| format!("request-{key}"),
-        )
-        .expect("headers");
+        let parsed =
+            parse_sdkwork_write_command_headers(Some(" idem-1 "), Some("hash-1"), None, |key| {
+                format!("request-{key}")
+            })
+            .expect("headers");
         assert_eq!(parsed.idempotency_key, "idem-1");
         assert_eq!(parsed.request_hash, "hash-1");
         assert_eq!(parsed.request_no, "request-idem-1");
@@ -214,7 +218,10 @@ mod tests {
         for (key, hash) in [(None, Some("h")), (Some(""), Some("h")), (Some("k"), None)] {
             let error = parse_sdkwork_write_command_headers(key, hash, None, |_| "r".to_owned())
                 .expect_err("required header");
-            assert!(matches!(error, SdkWorkWriteCommandHeaderError::MissingHeader(_)));
+            assert!(matches!(
+                error,
+                SdkWorkWriteCommandHeaderError::MissingHeader(_)
+            ));
         }
     }
 
@@ -222,11 +229,18 @@ mod tests {
     fn idempotency_key_enforces_openapi_schema() {
         let too_long = "a".repeat(IDEMPOTENCY_KEY_MAX_LEN + 1);
         for bad in ["key with space", "key/slash", too_long.as_str()] {
-            let error = parse_sdkwork_write_command_headers(Some(bad), Some("h"), None, |_| "r".to_owned())
-                .expect_err("invalid key");
-            assert!(matches!(error, SdkWorkWriteCommandHeaderError::InvalidHeader(_)));
+            let error =
+                parse_sdkwork_write_command_headers(Some(bad), Some("h"), None, |_| "r".to_owned())
+                    .expect_err("invalid key");
+            assert!(matches!(
+                error,
+                SdkWorkWriteCommandHeaderError::InvalidHeader(_)
+            ));
         }
-        let parsed = parse_sdkwork_write_command_headers(Some("k:1_2-3.x"), Some("h"), None, |_| "r".to_owned())
+        let parsed =
+            parse_sdkwork_write_command_headers(Some("k:1_2-3.x"), Some("h"), None, |_| {
+                "r".to_owned()
+            })
             .expect("charset-valid key");
         assert_eq!(parsed.idempotency_key, "k:1_2-3.x");
     }
