@@ -28,6 +28,9 @@ pub fn commerce_cashier_scene(order_subject: Option<&str>) -> &'static str {
         Some("points_recharge") => "recharge",
         Some("product") | Some("physical") => "checkout",
         Some("virtual_goods") | Some("membership") => "virtual",
+        // Published app templates are digital listings: the cashier renders the
+        // virtual-goods scene, not the physical checkout scene.
+        Some("app_template") | Some("deploy_app_template") => "virtual",
         _ => "checkout",
     }
 }
@@ -68,6 +71,15 @@ mod tests {
     #[test]
     fn cashier_scene_maps_points_recharge() {
         assert_eq!(commerce_cashier_scene(Some("points_recharge")), "recharge");
+    }
+
+    #[test]
+    fn cashier_scene_maps_a_published_app_template() {
+        assert_eq!(commerce_cashier_scene(Some("app_template")), "virtual");
+        assert_eq!(
+            commerce_cashier_scene(Some("deploy_app_template")),
+            "virtual"
+        );
     }
 
     #[test]
