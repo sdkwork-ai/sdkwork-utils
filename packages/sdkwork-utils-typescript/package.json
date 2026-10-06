@@ -1,6 +1,6 @@
 {
   "name": "@sdkwork/utils",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "description": "SDKWork cross-language utility library for TypeScript",
   "license": "MIT",
   "publishConfig": {
