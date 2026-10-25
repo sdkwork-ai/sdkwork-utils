@@ -105,3 +105,17 @@ build/
 # Added by repo-commit task 2026-09-25; targeted rules only, compliant with check-gitignore-standard
 packages/sdkwork-utils-typescript/src/**/*.js
 packages/sdkwork-utils-kotlin/bin/
+
+# ---- auto-audited: local artifacts that must never be committed ----
+*.key
+*.pem
+*.p12
+*.pfx
+*.keystore
+tmp/
+temp/
+*.tmp
+*.temp
+.cache/
+.turbo/
+.next/
