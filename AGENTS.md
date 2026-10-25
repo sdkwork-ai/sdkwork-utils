@@ -20,7 +20,7 @@ Do not copy root standard bodies into this file.
 
 ## Application Identity
 
-This repository is a shared multi-language utility library, not an SDKWork application root. There is no `sdkwork.app.config.json`.
+This repository is a shared multi-language utility library, not an SDKWork application root. There is no `agent.app.config.json`.
 
 ## Local Dictionary Structure
 
