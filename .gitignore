@@ -31,13 +31,6 @@ node_modules/
 .env.*
 !.env.example
 !.env.*.example
-.env.local
-.env.development.local
-.env.test.local
-.env.staging.local
-.env.production.local
-.env.postgres
-.env.release.local
 
 # Local tooling and workspace state
 .mimocode/
@@ -57,7 +50,6 @@ tools/.gateway-alignment-report.json
 **/.runtime/
 **/node_modules/
 **/target/
-!.env.postgres.example
 coverage/
 **/.pnpm-store/
 .DS_Store
