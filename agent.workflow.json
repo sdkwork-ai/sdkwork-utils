@@ -1,0 +1,42 @@
+{
+  "$schema": "https://sdkwork.com/schemas/agent-workflow.schema.json",
+  "schemaVersion": "2026-06-06.agent.workflow.v1",
+  "workflowRole": "ci-only",
+  "app": {
+    "id": "sdkwork-utils",
+    "name": "SDKWork Utils",
+    "repository": "sdkwork-ai/sdkwork-utils",
+    "sourcePath": "."
+  },
+  "release": {
+    "artifactPrefix": "sdkwork-utils",
+    "defaultVersion": "0.11.0"
+  },
+  "toolchains": {
+    "node": "20",
+    "pnpm": "10.33.0",
+    "python": "3.12",
+    "java": "21",
+    "go": "1.22",
+    "rust": "stable",
+    "dotnet": "8.0.x"
+  },
+  "ci": {
+    "setup": [
+      {
+        "name": "Install PHP and Composer",
+        "run": "sudo apt-get update && sudo apt-get install -y php-cli php-xml php-mbstring unzip && curl -sS https://getcomposer.org/installer | php && sudo mv composer.phar /usr/local/bin/composer"
+      },
+      {
+        "name": "Install Python test dependency",
+        "run": "pip install pytest"
+      },
+      {
+        "name": "Install PHP dependencies",
+        "workingDirectory": "packages/sdkwork-utils-php",
+        "run": "composer install"
+      }
+    ]
+  },
+  "targets": []
+}

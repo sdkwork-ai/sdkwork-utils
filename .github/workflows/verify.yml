@@ -1,56 +1,28 @@
-name: verify
+name: Verify Application
 
+# Thin verification entrypoint. Runner setup, dependency checkouts, toolchain
+# versions, and the install command come from the reusable SDKWork CI workflow
+# and `agent.workflow.json`; this file only selects the triggers and the gate
+# scripts. Never add inline setup, install, or gate commands here — declare them
+# in `agent.workflow.json` or the repository's package scripts instead.
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.22"
-
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: "8.0.x"
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install PHP and Composer
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y php-cli php-xml php-mbstring unzip
-          curl -sS https://getcomposer.org/installer | php
-          sudo mv composer.phar /usr/local/bin/composer
-
-      - name: Install Python test dependency
-        run: pip install pytest
-
-      - name: Install PHP dependencies
-        working-directory: packages/sdkwork-utils-php
-        run: composer install
-
-      - name: Verify
-        run: pnpm verify
+    uses: sdkwork-ai/sdkwork-github-workflow/.github/workflows/sdkwork-ci.yml@v1
+    with:
+      config_path: agent.workflow.json
+      scripts: verify
+      install_command: pnpm install --frozen-lockfile
+      os_matrix: '["ubuntu-24.04"]'
+      framework_ref: v1
+    secrets:
+      SDKWORK_RELEASE_TOKEN: ${{ secrets.SDKWORK_RELEASE_TOKEN }}
