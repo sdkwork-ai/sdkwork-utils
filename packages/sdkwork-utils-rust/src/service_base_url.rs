@@ -36,6 +36,129 @@
 //! assert_eq!(resolved.base_url(), Some("https://router.sdkwork.com"));
 //! ```
 
+use std::sync::{Arc, OnceLock};
+
+/// One HTTP target selected by a service registry.
+///
+/// `base_url` is an absolute `http(s)` origin. `instance_id` identifies the
+/// registered process/port so runtime failures can demote exactly that target
+/// instead of every replica of the service.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RegistryHttpTarget {
+    /// Registry service name the target was resolved for.
+    pub service: String,
+    /// Stable instance identity (`host:port` or deployment-scoped id).
+    pub instance_id: String,
+    /// Absolute `http(s)` base URL, without a trailing slash.
+    pub base_url: String,
+}
+
+/// Process-wide HTTP service registry consulted by [`resolve`] in split mode.
+///
+/// The trait lives here, in the dependency-free utility crate, so every backend
+/// SDK consumer can resolve through one component. The database-backed
+/// implementation is supplied by `sdkwork-discovery-client` and installed once
+/// by the composition root. Resolution is synchronous and must read a local
+/// cache: it is called on request paths, never from a database round trip.
+pub trait HttpServiceRegistry: Send + Sync {
+    /// Returns the best currently-healthy target for `service`, or `None` when
+    /// the registry has no healthy instance (callers then degrade to the
+    /// authored topology value or the documented split default).
+    fn resolve_http(&self, service: &str) -> Option<RegistryHttpTarget>;
+
+    /// Reports a transport/protocol failure so the target is demoted for a
+    /// bounded cooldown; the next resolution prefers another healthy instance.
+    fn report_failure(&self, target: &RegistryHttpTarget, reason: &str);
+
+    /// Reports a successful call so the target's failure streak is reset.
+    fn report_success(&self, target: &RegistryHttpTarget);
+}
+
+static HTTP_SERVICE_REGISTRY: OnceLock<Arc<dyn HttpServiceRegistry>> = OnceLock::new();
+
+/// Installs the process-wide HTTP service registry.
+///
+/// Returns `true` when this call won the slot. A second installation is
+/// reported as `false` rather than silently replacing the first: one process
+/// has one registry view, and a duplicate install means the wiring is wrong.
+#[must_use = "a `false` result means an earlier registry was kept"]
+pub fn install_http_service_registry(registry: Arc<dyn HttpServiceRegistry>) -> bool {
+    HTTP_SERVICE_REGISTRY.set(registry).is_ok()
+}
+
+/// The installed process-wide HTTP service registry, when bootstrap installed
+/// one.
+pub fn installed_http_service_registry() -> Option<&'static Arc<dyn HttpServiceRegistry>> {
+    HTTP_SERVICE_REGISTRY.get()
+}
+
+/// Returns the registry-selected target for `service`, if a healthy instance is
+/// currently cached.
+///
+/// Consumers that construct a generated HTTP SDK per call use this to replace
+/// their configured base URL. `None` means "degrade to the configured value".
+pub fn registry_http_target(service: &str) -> Option<RegistryHttpTarget> {
+    installed_http_service_registry()?.resolve_http(service)
+}
+
+/// Resolves a consumer's base URL: a healthy registry target first, then the
+/// caller's configured value.
+///
+/// The configured value is returned unchanged (minus a trailing slash) when no
+/// registry is installed or no healthy instance exists, so a split deployment
+/// that has not migrated yet keeps working.
+pub fn registry_base_url_or(service: &str, configured: &str) -> String {
+    registry_http_target(service)
+        .map(|target| target.base_url)
+        .unwrap_or_else(|| configured.trim().trim_end_matches('/').to_owned())
+}
+
+/// Reports a failure against the target the registry currently selects for
+/// `service`.
+///
+/// Use this from an error mapper that does not carry the resolved base URL. The
+/// report is ignored when no registry/target is installed.
+pub fn report_current_registry_failure(service: &str, reason: &str) {
+    if let Some(registry) = installed_http_service_registry() {
+        if let Some(target) = registry.resolve_http(service) {
+            registry.report_failure(&target, reason);
+        }
+    }
+}
+
+/// Reports a success against the target the registry currently selects for
+/// `service`.
+pub fn report_current_registry_success(service: &str) {
+    if let Some(registry) = installed_http_service_registry() {
+        if let Some(target) = registry.resolve_http(service) {
+            registry.report_success(&target);
+        }
+    }
+}
+
+/// Reports the outcome of one SDK call so the registry can demote a failing
+/// instance and reset a recovering one.
+///
+/// The report is ignored when the registry did not select `base_url` (for
+/// example the caller used an explicit override or the configured fallback):
+/// demoting a target the registry is not routing to would be incorrect.
+pub fn report_registry_result(service: &str, base_url: &str, success: bool, reason: &str) {
+    let Some(registry) = installed_http_service_registry() else {
+        return;
+    };
+    let Some(target) = registry.resolve_http(service) else {
+        return;
+    };
+    if target.base_url.trim_end_matches('/') != base_url.trim().trim_end_matches('/') {
+        return;
+    }
+    if success {
+        registry.report_success(&target);
+    } else {
+        registry.report_failure(&target, reason);
+    }
+}
+
 /// Whether the target surface runs in another process or is composed in-process.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ServiceMode {
@@ -53,6 +176,8 @@ pub enum ServiceMode {
 pub enum BaseUrlSource {
     /// An explicit per-service override environment variable.
     ExplicitOverride,
+    /// A healthy instance selected from the process' service registry.
+    Registry,
     /// The topology's authored public HTTP URL for the surface.
     AuthoredPublicUrl,
     /// The compiled-in default for a split deployment.
@@ -66,6 +191,7 @@ impl BaseUrlSource {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::ExplicitOverride => "explicit_override",
+            Self::Registry => "registry",
             Self::AuthoredPublicUrl => "authored_public_url",
             Self::SplitDefault => "split_default",
             Self::EmbeddedInProcess => "embedded_in_process",
@@ -214,9 +340,26 @@ fn normalize(value: Option<String>) -> Option<String> {
 ///    split deployment that hosts an otherwise in-process surface separately;
 /// 2. in [`ServiceMode::Embedded`], stop: the target is composed in-process, so
 ///    there is no HTTP base URL and none is derived;
-/// 3. the authored public HTTP URL (an absolute domain in cloud);
-/// 4. the split default.
+/// 3. a healthy instance selected from the process' [`HttpServiceRegistry`]
+///    (the database-backed discovery registry; see `DISCOVERY_SPEC.md`);
+/// 4. the authored public HTTP URL (an absolute domain in cloud);
+/// 5. the split default — the documented degradation path when neither the
+///    registry nor the topology yields a value.
 pub fn resolve(request: &ServiceBaseUrlRequest) -> ResolvedBaseUrl {
+    resolve_with_registry(
+        request,
+        installed_http_service_registry().map(|registry| registry.as_ref()),
+    )
+}
+
+/// Pure form of [`resolve`] with an explicit registry view.
+///
+/// Keeping the decision injectable lets unit tests exercise registry precedence
+/// without installing a process-global registry (which cannot be uninstalled).
+pub fn resolve_with_registry(
+    request: &ServiceBaseUrlRequest,
+    registry: Option<&dyn HttpServiceRegistry>,
+) -> ResolvedBaseUrl {
     let service = request.service.clone();
 
     if let Some(value) = request.explicit_override.clone() {
@@ -236,6 +379,16 @@ pub fn resolve(request: &ServiceBaseUrlRequest) -> ResolvedBaseUrl {
             base_url: None,
             source: BaseUrlSource::EmbeddedInProcess,
         };
+    }
+
+    if let Some(registry) = registry {
+        if let Some(target) = registry.resolve_http(&service) {
+            return ResolvedBaseUrl {
+                service,
+                base_url: Some(target.base_url),
+                source: BaseUrlSource::Registry,
+            };
+        }
     }
 
     if let Some(value) = request.authored_public_url.clone() {
@@ -358,6 +511,94 @@ mod tests {
 
     fn embedded(service: &str) -> ServiceBaseUrlRequest {
         ServiceBaseUrlRequest::new(service, ServiceMode::Embedded)
+    }
+
+    /// A registry view with one healthy target and no failure tracking.
+    struct StaticRegistry {
+        target: RegistryHttpTarget,
+    }
+
+    impl HttpServiceRegistry for StaticRegistry {
+        fn resolve_http(&self, service: &str) -> Option<RegistryHttpTarget> {
+            (service == self.target.service).then(|| self.target.clone())
+        }
+
+        fn report_failure(&self, _target: &RegistryHttpTarget, _reason: &str) {}
+
+        fn report_success(&self, _target: &RegistryHttpTarget) {}
+    }
+
+    fn static_registry(service: &str, base_url: &str) -> StaticRegistry {
+        StaticRegistry {
+            target: RegistryHttpTarget {
+                service: service.to_owned(),
+                instance_id: "instance-1".to_owned(),
+                base_url: base_url.to_owned(),
+            },
+        }
+    }
+
+    #[test]
+    fn registry_base_url_falls_back_to_the_configured_value() {
+        // No process registry is installed in this test binary, so the helper
+        // must return the consumer's configured value unchanged.
+        assert_eq!(
+            registry_base_url_or("never-registered", "https://configured.example.com/"),
+            "https://configured.example.com"
+        );
+    }
+
+    #[test]
+    fn registry_healthy_instance_wins_over_the_authored_and_default_values() {
+        let registry = static_registry("cloudrouter", "https://registry.example.com");
+        let resolved = resolve_with_registry(
+            &split("cloudrouter")
+                .with_authored_public_url(Some("https://authored.example.com".into()))
+                .with_split_default("http://127.0.0.1:3900"),
+            Some(&registry),
+        );
+        assert_eq!(resolved.base_url(), Some("https://registry.example.com"));
+        assert_eq!(resolved.source(), BaseUrlSource::Registry);
+    }
+
+    #[test]
+    fn explicit_override_wins_over_the_registry() {
+        let registry = static_registry("cloudrouter", "https://registry.example.com");
+        let resolved = resolve_with_registry(
+            &split("cloudrouter")
+                .with_explicit_override(Some("https://override.example.com".into())),
+            Some(&registry),
+        );
+        assert_eq!(resolved.base_url(), Some("https://override.example.com"));
+        assert_eq!(resolved.source(), BaseUrlSource::ExplicitOverride);
+    }
+
+    #[test]
+    fn embedded_mode_never_consults_the_registry() {
+        let registry = static_registry("cloudrouter", "https://registry.example.com");
+        let resolved = resolve_with_registry(&embedded("cloudrouter"), Some(&registry));
+        assert_eq!(resolved.base_url(), None);
+        assert_eq!(resolved.source(), BaseUrlSource::EmbeddedInProcess);
+    }
+
+    #[test]
+    fn an_empty_registry_degrades_to_the_authored_value_then_the_default() {
+        let registry = static_registry("other-service", "https://registry.example.com");
+        let authored = resolve_with_registry(
+            &split("cloudrouter")
+                .with_authored_public_url(Some("https://authored.example.com".into()))
+                .with_split_default("http://127.0.0.1:3900"),
+            Some(&registry),
+        );
+        assert_eq!(authored.base_url(), Some("https://authored.example.com"));
+        assert_eq!(authored.source(), BaseUrlSource::AuthoredPublicUrl);
+
+        let fallback = resolve_with_registry(
+            &split("cloudrouter").with_split_default("http://127.0.0.1:3900"),
+            Some(&registry),
+        );
+        assert_eq!(fallback.base_url(), Some("http://127.0.0.1:3900"));
+        assert_eq!(fallback.source(), BaseUrlSource::SplitDefault);
     }
 
     #[test]
