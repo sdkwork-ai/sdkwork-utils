@@ -43,12 +43,33 @@ pub fn commerce_cashier_scene(order_subject: Option<&str>) -> &'static str {
 /// order primary key, which is the key the H5 cashier page uses with
 /// `orders.retrieve(orderId)`.
 pub fn build_commerce_cashier_url(scene: &str, order_id: &str, out_trade_no: &str) -> String {
+    build_commerce_cashier_url_with_base(scene, order_id, out_trade_no, None)
+}
+
+/// Build a cashier deep-link against an explicit base origin.
+///
+/// `base_url` is the admin-configured H5 payment domain (`commerce_payment_domain_setting`),
+/// resolved by the payment capability. Callers pass the configured origin so the
+/// generated QR content follows operator configuration; `None` falls back to
+/// `commerce_cashier_base_url()` (env override, then platform default).
+///
+/// The base must be an origin only (`scheme://host[:port]`); a trailing slash is
+/// tolerated because operators routinely paste `https://h5.example.com/`.
+pub fn build_commerce_cashier_url_with_base(
+    scene: &str,
+    order_id: &str,
+    out_trade_no: &str,
+    base_url: Option<&str>,
+) -> String {
+    let base = base_url
+        .map(str::trim)
+        .map(|value| value.trim_end_matches('/'))
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .unwrap_or_else(commerce_cashier_base_url);
     format!(
         "{}/cashier/{}?scene={}&outTradeNo={}",
-        commerce_cashier_base_url(),
-        order_id,
-        scene,
-        out_trade_no
+        base, order_id, scene, out_trade_no
     )
 }
 
@@ -89,6 +110,27 @@ mod tests {
         assert!(url.contains("scene=recharge"));
         assert!(url.contains("outTradeNo=OT-1"));
         assert!(!url.contains('#'));
+    }
+
+    #[test]
+    fn build_cashier_url_honors_configured_h5_base() {
+        let url = build_commerce_cashier_url_with_base(
+            "recharge",
+            "ORD-1",
+            "OT-1",
+            Some("https://h5.example.com/"),
+        );
+        assert_eq!(
+            "https://h5.example.com/cashier/ORD-1?scene=recharge&outTradeNo=OT-1",
+            url
+        );
+    }
+
+    #[test]
+    fn build_cashier_url_ignores_a_blank_configured_base() {
+        let url = build_commerce_cashier_url_with_base("recharge", "ORD-1", "OT-1", Some("  "));
+        assert!(url.contains("/cashier/ORD-1"));
+        assert!(url.starts_with("https://"));
     }
 
     #[test]
