@@ -2,10 +2,12 @@
 
 /// H5 app origin hosting the order cashier route.
 ///
-/// `SDKWORK_COMMERCE_CASHIER_BASE_URL` may override it per deployment; it
-/// must carry only the origin (no trailing cashier path), because
-/// `build_commerce_cashier_url` appends the canonical H5 cashier route.
-const DEFAULT_CASHIER_BASE_URL: &str = "https://im.sdkwork.com";
+/// `SDKWORK_COMMERCE_CASHIER_BASE_URL` may override it per deployment.
+/// The configured value must carry only the origin (no trailing cashier path),
+/// because `build_commerce_cashier_url` appends the canonical H5 cashier route.
+/// The platform default is the unified SDKWork platform host, which serves the
+/// shared cashier route at `/cashier/{order_id}`.
+const DEFAULT_CASHIER_BASE_URL: &str = "https://platform.sdkwork.com";
 
 /// Resolve the H5 cashier base origin from `SDKWORK_COMMERCE_CASHIER_BASE_URL`
 /// or the platform default.
@@ -88,6 +90,11 @@ pub fn commerce_webhook_payment_status_is_success(status: Option<&str>) -> bool 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cashier_default_base_is_the_unified_platform_host() {
+        assert_eq!("https://platform.sdkwork.com", DEFAULT_CASHIER_BASE_URL);
+    }
 
     #[test]
     fn cashier_scene_maps_points_recharge() {
