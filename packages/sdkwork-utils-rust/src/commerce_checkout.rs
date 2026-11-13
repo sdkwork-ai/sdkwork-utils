@@ -20,6 +20,11 @@ pub fn commerce_cashier_base_url() -> String {
 }
 
 /// Map `commerce_order.subject` to a cashier scene query parameter.
+///
+/// Every account-value recharge subject renders the recharge scene so the
+/// cashier shows the purchase summary and pay action, not the physical
+/// checkout flow. `points_recharge` (Membership Points) and the Token Bank
+/// subjects share the scene but remain distinct assets on the ledger.
 pub fn commerce_cashier_scene(order_subject: Option<&str>) -> &'static str {
     match order_subject
         .map(str::trim)
@@ -27,7 +32,12 @@ pub fn commerce_cashier_scene(order_subject: Option<&str>) -> &'static str {
         .map(str::to_ascii_lowercase)
         .as_deref()
     {
-        Some("points_recharge") => "recharge",
+        Some("points_recharge")
+        | Some("token_bank_recharge")
+        | Some("token_bank_plan_purchase")
+        | Some("token_bank_plan_renewal")
+        | Some("account_recharge_package")
+        | Some("coupon_recharge") => "recharge",
         Some("product") | Some("physical") => "checkout",
         Some("virtual_goods") | Some("membership") => "virtual",
         // Published app templates are digital listings: the cashier renders the
@@ -75,6 +85,42 @@ pub fn build_commerce_cashier_url_with_base(
     )
 }
 
+/// Build the anonymous cashier deep-link for a signed capability token.
+///
+/// The URL carries the token as its path segment and **no** plaintext order id or
+/// trade number. An anonymous cashier must not expose an enumerable key, and every
+/// fact the page needs (scene, amount, expiry) is bound inside the signed token
+/// instead of in query parameters the client could tamper with.
+///
+/// Returns `None` when `token` is blank: a tokenless URL would degrade to the
+/// login-required cashier entry, which callers must handle explicitly rather than
+/// emit silently.
+pub fn build_commerce_cashier_token_url(token: &str) -> Option<String> {
+    build_commerce_cashier_token_url_with_base(token, None)
+}
+
+/// Build the anonymous cashier deep-link against an explicit base origin.
+///
+/// `base_url` is the admin-configured H5 payment domain; `None` falls back to
+/// [`commerce_cashier_base_url`]. A trailing slash is tolerated because operators
+/// routinely paste `https://h5.example.com/`.
+pub fn build_commerce_cashier_token_url_with_base(
+    token: &str,
+    base_url: Option<&str>,
+) -> Option<String> {
+    let token = token.trim();
+    if token.is_empty() {
+        return None;
+    }
+    let base = base_url
+        .map(str::trim)
+        .map(|value| value.trim_end_matches('/'))
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .unwrap_or_else(commerce_cashier_base_url);
+    Some(format!("{base}/cashier/{token}"))
+}
+
 /// Returns true when a normalized provider webhook status indicates payment success.
 pub fn commerce_webhook_payment_status_is_success(status: Option<&str>) -> bool {
     matches!(
@@ -99,6 +145,25 @@ mod tests {
     #[test]
     fn cashier_scene_maps_points_recharge() {
         assert_eq!(commerce_cashier_scene(Some("points_recharge")), "recharge");
+    }
+
+    #[test]
+    fn cashier_scene_maps_every_recharge_subject_to_recharge() {
+        for subject in [
+            "points_recharge",
+            "token_bank_recharge",
+            "token_bank_plan_purchase",
+            "token_bank_plan_renewal",
+            "account_recharge_package",
+            "coupon_recharge",
+            "  TOKEN_BANK_RECHARGE  ",
+        ] {
+            assert_eq!(
+                commerce_cashier_scene(Some(subject)),
+                "recharge",
+                "subject {subject:?} must render the recharge cashier scene"
+            );
+        }
     }
 
     #[test]
@@ -145,5 +210,39 @@ mod tests {
         assert!(commerce_webhook_payment_status_is_success(Some(
             "TRADE_SUCCESS"
         )));
+    }
+
+    #[test]
+    fn token_cashier_url_carries_only_the_token() {
+        let url = build_commerce_cashier_token_url_with_base(
+            "v1.eyJvcmRlcklkIjoiT1JELTEifQ.sig",
+            Some("https://h5.example.com/"),
+        )
+        .expect("token url");
+        assert_eq!(
+            "https://h5.example.com/cashier/v1.eyJvcmRlcklkIjoiT1JELTEifQ.sig",
+            url
+        );
+        // The anonymous entry must never leak an enumerable order key or the
+        // merchant trade number into the URL.
+        assert!(!url.contains("ORD-1"));
+        assert!(!url.contains("scene="));
+        assert!(!url.contains("outTradeNo="));
+    }
+
+    #[test]
+    fn token_cashier_url_falls_back_to_the_deployment_base() {
+        let url = build_commerce_cashier_token_url("v1.payload.sig").expect("token url");
+        assert!(url.starts_with("https://"));
+        assert!(url.ends_with("/cashier/v1.payload.sig"));
+    }
+
+    #[test]
+    fn token_cashier_url_rejects_a_blank_token() {
+        assert_eq!(build_commerce_cashier_token_url("   "), None);
+        assert_eq!(
+            build_commerce_cashier_token_url_with_base("", Some("https://h5.example.com")),
+            None
+        );
     }
 }
