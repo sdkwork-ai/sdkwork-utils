@@ -133,6 +133,43 @@ pub fn parse_sdkwork_write_command_headers(
     })
 }
 
+/// Like [`parse_sdkwork_write_command_headers`], but derives the request hash
+/// from the server-verified payload when the client omits the header.
+///
+/// The authority OpenAPI for several admin/app surfaces declares only
+/// `Idempotency-Key` (`API_SPEC.md` §14/§15); a contract-following client
+/// cannot compute the scope-canonical hash. When the header is absent the
+/// caller supplies a hash computed from the parsed body, so replay protection
+/// still compares the actual request fingerprint. When present, the client
+/// value is returned unchanged and the caller verifies it against the same
+/// expected hash, preserving the fail-closed mismatch check.
+///
+/// # Errors
+/// [`SdkWorkWriteCommandHeaderError::MissingHeader`] when the idempotency key
+/// is absent/blank; [`SdkWorkWriteCommandHeaderError::InvalidHeader`] when the
+/// idempotency key is malformed or the derived hash cannot be produced.
+pub fn parse_sdkwork_write_command_headers_with_derived_hash(
+    idempotency_key: Option<&str>,
+    request_hash: Option<&str>,
+    request_no: Option<&str>,
+    derive_request_hash: impl FnOnce() -> Result<String, SdkWorkWriteCommandHeaderError>,
+    fallback_request_no: impl FnOnce(&str) -> String,
+) -> Result<SdkWorkWriteCommandHeaders, SdkWorkWriteCommandHeaderError> {
+    let idempotency_key = required_header(idempotency_key, SDKWORK_IDEMPOTENCY_KEY_HEADER)?;
+    let idempotency_key = validate_idempotency_key(idempotency_key)?;
+    let request_hash = match header_text(request_hash) {
+        Some(value) => value,
+        None => derive_request_hash()?,
+    };
+    let request_no =
+        header_text(request_no).unwrap_or_else(|| fallback_request_no(&idempotency_key));
+    Ok(SdkWorkWriteCommandHeaders {
+        idempotency_key,
+        request_hash,
+        request_no,
+    })
+}
+
 fn required_header(
     value: Option<&str>,
     name: &'static str,
@@ -211,6 +248,46 @@ mod tests {
         assert_eq!(parsed.idempotency_key, "idem-1");
         assert_eq!(parsed.request_hash, "hash-1");
         assert_eq!(parsed.request_no, "request-idem-1");
+    }
+
+    #[test]
+    fn derived_hash_is_used_only_when_the_client_omits_the_header() {
+        let body = serde_json::json!({"h5Hostname":"h5.example.com"});
+        let derived =
+            sdkwork_stable_json_request_hash("payment-domain-setting-upsert", &body).expect("hash");
+
+        let without_header = parse_sdkwork_write_command_headers_with_derived_hash(
+            Some("idem-1"),
+            None,
+            None,
+            || Ok(derived.clone()),
+            |key| format!("request-{key}"),
+        )
+        .expect("derived");
+        assert_eq!(without_header.request_hash, derived);
+
+        let with_header = parse_sdkwork_write_command_headers_with_derived_hash(
+            Some("idem-1"),
+            Some("client-hash"),
+            None,
+            || Ok("must-not-be-used".to_owned()),
+            |key| format!("request-{key}"),
+        )
+        .expect("client header");
+        assert_eq!(with_header.request_hash, "client-hash");
+
+        let missing_key = parse_sdkwork_write_command_headers_with_derived_hash(
+            None,
+            None,
+            None,
+            || Ok(derived.clone()),
+            |key| format!("request-{key}"),
+        )
+        .expect_err("idempotency key still required");
+        assert!(matches!(
+            missing_key,
+            SdkWorkWriteCommandHeaderError::MissingHeader(_)
+        ));
     }
 
     #[test]
