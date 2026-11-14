@@ -213,6 +213,16 @@ pub fn derive_cashier_token_key(
     ))
 }
 
+/// Message signed to bind a payer openid to a cashier capability token.
+///
+/// Defined here because two independent services must agree on it byte for byte:
+/// the IAM anonymous payment OAuth mints the binding, and the order app-api
+/// verifies it before accepting `wechat_jsapi` on an anonymous cashier link.
+#[must_use]
+pub fn cashier_openid_binding_message(token_id: &str, openid: &str) -> String {
+    format!("cashier-openid|{token_id}|{openid}")
+}
+
 /// Reads the deployment cashier-token secret from the environment.
 ///
 /// - `Ok(None)` when the variable is unset or blank: the deployment keeps the
@@ -455,6 +465,18 @@ mod tests {
         assert_eq!(
             verify_cashier_token(&token, b"", 1_700_000_100, CASHIER_TOKEN_AUDIENCE),
             Err(CashierTokenError::InvalidSignature)
+        );
+    }
+
+    #[test]
+    fn openid_binding_message_is_token_scoped() {
+        assert_eq!(
+            cashier_openid_binding_message("jti-1", "o_payer"),
+            "cashier-openid|jti-1|o_payer"
+        );
+        assert_ne!(
+            cashier_openid_binding_message("jti-1", "o_payer"),
+            cashier_openid_binding_message("jti-2", "o_payer")
         );
     }
 
