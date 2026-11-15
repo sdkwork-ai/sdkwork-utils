@@ -49,6 +49,18 @@ pub const CASHIER_TOKEN_SECRET_ENV: &str = "SDKWORK_COMMERCE_CASHIER_TOKEN_SECRE
 /// HKDF salt isolating cashier-token keys from every other derived key.
 const CASHIER_TOKEN_KEY_SALT: &[u8] = b"sdkwork.commerce.cashier-token.v1";
 
+/// Key epoch used by tokens that predate epoch rotation.
+///
+/// Epoch 1 is the original derivation (`tenant + purpose` only), so tokens minted
+/// before this field existed keep verifying. Epochs above 1 add the epoch to the
+/// HKDF info label, which rotates the key without changing the deployment secret.
+pub const CASHIER_TOKEN_EPOCH_DEFAULT: i64 = 1;
+
+/// Serde default for the `epoch` claim (legacy tokens have no field).
+fn default_cashier_token_epoch() -> i64 {
+    CASHIER_TOKEN_EPOCH_DEFAULT
+}
+
 /// Minimum master key material length accepted by [`derive_cashier_token_key`].
 const MIN_MASTER_KEY_LEN: usize = 32;
 
@@ -79,6 +91,13 @@ pub struct CashierTokenClaims {
     pub scene: String,
     /// Audience the token was minted for.
     pub audience: String,
+    /// Tenant key epoch the signature was derived from.
+    ///
+    /// The verifier derives the key from this claim, so a rotated tenant can
+    /// verify older tokens until they expire while new tokens use the new epoch.
+    /// Missing in legacy payloads, which default to [`CASHIER_TOKEN_EPOCH_DEFAULT`].
+    #[serde(default = "default_cashier_token_epoch")]
+    pub epoch: i64,
     /// Issued-at, unix seconds.
     pub issued_at: i64,
     /// Expiry, unix seconds.
@@ -108,6 +127,9 @@ pub struct CashierTokenIssue<'a> {
     /// Lifetime in seconds. The caller clamps this to
     /// `min(order remaining lifetime, cashier TTL)`.
     pub ttl_seconds: i64,
+    /// Tenant key epoch to sign with. Callers resolve the tenant's current epoch
+    /// from the payment settings store; `0`/negative is clamped to epoch 1.
+    pub key_epoch: i64,
     /// Unique token id.
     pub token_id: &'a str,
 }
@@ -125,6 +147,7 @@ impl CashierTokenClaims {
             currency_code: issue.currency_code.to_owned(),
             scene: issue.scene.to_owned(),
             audience: CASHIER_TOKEN_AUDIENCE.to_owned(),
+            epoch: issue.key_epoch.max(CASHIER_TOKEN_EPOCH_DEFAULT),
             issued_at,
             expires_at: issued_at.saturating_add(issue.ttl_seconds.max(0)),
             token_id: issue.token_id.to_owned(),
@@ -198,6 +221,21 @@ pub fn derive_cashier_token_key(
     master_key: &[u8],
     tenant_id: &str,
 ) -> Result<[u8; 32], CashierTokenError> {
+    derive_cashier_token_key_with_epoch(master_key, tenant_id, CASHIER_TOKEN_EPOCH_DEFAULT)
+}
+
+/// Derives the tenant-scoped cashier-token signing key for one key epoch.
+///
+/// Epoch 1 keeps the original derivation byte for byte, so tokens minted before
+/// epoch rotation still verify. Every later epoch adds `epoch=<n>` to the HKDF
+/// info label: rotating a tenant's epoch changes its key without changing the
+/// deployment secret, which is what makes the payment-center refresh instant and
+/// restart-free.
+pub fn derive_cashier_token_key_with_epoch(
+    master_key: &[u8],
+    tenant_id: &str,
+    epoch: i64,
+) -> Result<[u8; 32], CashierTokenError> {
     if master_key.len() < MIN_MASTER_KEY_LEN {
         return Err(CashierTokenError::WeakKeyMaterial);
     }
@@ -205,12 +243,42 @@ pub fn derive_cashier_token_key(
     if tenant_id.is_empty() {
         return Err(CashierTokenError::MissingClaim("tenantId"));
     }
-    let info = format!("tenant={tenant_id};purpose=cashier-token");
+    let epoch = epoch.max(CASHIER_TOKEN_EPOCH_DEFAULT);
+    let info = if epoch == CASHIER_TOKEN_EPOCH_DEFAULT {
+        format!("tenant={tenant_id};purpose=cashier-token")
+    } else {
+        format!("tenant={tenant_id};epoch={epoch};purpose=cashier-token")
+    };
     Ok(derive_aes_256_key(
         master_key,
         CASHIER_TOKEN_KEY_SALT,
         info.as_bytes(),
     ))
+}
+
+/// Reads the key epoch from a token's (not yet verified) payload.
+///
+/// The epoch is only a key selector: the signature must still validate under the
+/// key derived for that epoch, so a caller cannot choose a weaker key by editing
+/// the field. Malformed payloads fall back to [`CASHIER_TOKEN_EPOCH_DEFAULT`];
+/// verification rejects them anyway.
+#[must_use]
+pub fn peek_cashier_token_epoch(token: &str) -> i64 {
+    let Some(encoded_payload) = token.split('.').nth(1) else {
+        return CASHIER_TOKEN_EPOCH_DEFAULT;
+    };
+    let Some(bytes) = base64url_decode(encoded_payload) else {
+        return CASHIER_TOKEN_EPOCH_DEFAULT;
+    };
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Peeked {
+        #[serde(default = "default_cashier_token_epoch")]
+        epoch: i64,
+    }
+    serde_json::from_slice::<Peeked>(&bytes)
+        .map(|peeked| peeked.epoch.max(CASHIER_TOKEN_EPOCH_DEFAULT))
+        .unwrap_or(CASHIER_TOKEN_EPOCH_DEFAULT)
 }
 
 /// Message signed to bind a payer openid to a cashier capability token.
@@ -356,10 +424,94 @@ mod tests {
                 currency_code: "CNY",
                 scene: "checkout",
                 ttl_seconds: 900,
+                key_epoch: 1,
                 token_id: "jti-1",
             },
             1_700_000_000,
         )
+    }
+
+    #[test]
+    fn epoch_one_keeps_the_legacy_key_derivation() {
+        assert_eq!(
+            derive_cashier_token_key_with_epoch(SECRET, "100001", 1).expect("epoch 1 key"),
+            derive_cashier_token_key(SECRET, "100001").expect("legacy key")
+        );
+    }
+
+    #[test]
+    fn rotating_the_epoch_changes_the_tenant_key() {
+        let epoch_one = derive_cashier_token_key_with_epoch(SECRET, "100001", 1)
+            .expect("epoch 1 key");
+        let epoch_two = derive_cashier_token_key_with_epoch(SECRET, "100001", 2)
+            .expect("epoch 2 key");
+        assert_ne!(epoch_one, epoch_two);
+        // The same epoch must stay stable across calls.
+        assert_eq!(
+            epoch_two,
+            derive_cashier_token_key_with_epoch(SECRET, "100001", 2).expect("epoch 2 key")
+        );
+    }
+
+    #[test]
+    fn a_token_carries_and_exposes_its_epoch() {
+        let token = encode_cashier_token(
+            &CashierTokenClaims::issue(
+                &CashierTokenIssue {
+                    tenant_id: "100001",
+                    order_id: "ORD-1",
+                    out_trade_no: "OT-1",
+                    amount: "6990",
+                    currency_code: "CNY",
+                    scene: "checkout",
+                    ttl_seconds: 900,
+                    key_epoch: 3,
+                    token_id: "jti-epoch-3",
+                },
+                1_700_000_000,
+            ),
+            &derive_cashier_token_key_with_epoch(SECRET, "100001", 3).expect("epoch 3 key"),
+        )
+        .expect("encode");
+
+        assert_eq!(peek_cashier_token_epoch(&token), 3);
+        let verified = verify_cashier_token(
+            &token,
+            &derive_cashier_token_key_with_epoch(SECRET, "100001", 3).expect("epoch 3 key"),
+            1_700_000_100,
+            CASHIER_TOKEN_AUDIENCE,
+        )
+        .expect("verify");
+        assert_eq!(verified.epoch, 3);
+        // The previous epoch's key must not verify the new token.
+        assert_eq!(
+            verify_cashier_token(
+                &token,
+                &derive_cashier_token_key_with_epoch(SECRET, "100001", 2).expect("epoch 2 key"),
+                1_700_000_100,
+                CASHIER_TOKEN_AUDIENCE
+            ),
+            Err(CashierTokenError::InvalidSignature)
+        );
+    }
+
+    #[test]
+    fn legacy_payload_without_epoch_defaults_to_one() {
+        let payload = serde_json::json!({
+            "tenantId": "100001",
+            "orderId": "ORD-1",
+            "outTradeNo": "OT-1",
+            "amount": "6990",
+            "currencyCode": "CNY",
+            "scene": "checkout",
+            "audience": CASHIER_TOKEN_AUDIENCE,
+            "issuedAt": 1_700_000_000_i64,
+            "expiresAt": 1_700_000_900_i64,
+            "tokenId": "jti-legacy"
+        });
+        let claims: CashierTokenClaims =
+            serde_json::from_value(payload).expect("legacy payload");
+        assert_eq!(claims.epoch, CASHIER_TOKEN_EPOCH_DEFAULT);
     }
 
     #[test]
