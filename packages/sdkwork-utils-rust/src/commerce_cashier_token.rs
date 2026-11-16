@@ -302,6 +302,32 @@ pub fn peek_cashier_token_epoch(token: &str) -> i64 {
         .unwrap_or(CASHIER_TOKEN_EPOCH_DEFAULT)
 }
 
+/// Reads the tenant claim from a token's (not yet verified) payload.
+///
+/// The tenant is only a key selector: the signature must still validate under
+/// the key derived for that tenant, so an edited tenant claim cannot pass. This
+/// is the tenant counterpart of [`peek_cashier_token_epoch`].
+#[must_use]
+pub fn peek_cashier_token_tenant(token: &str) -> Option<String> {
+    let encoded_payload = token.split('.').nth(1)?;
+    if encoded_payload.is_empty() || encoded_payload.len() > MAX_PAYLOAD_LEN {
+        return None;
+    }
+    let bytes = base64url_decode(encoded_payload)?;
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Peeked {
+        tenant_id: String,
+    }
+    let peeked: Peeked = serde_json::from_slice(&bytes).ok()?;
+    let tenant = peeked.tenant_id.trim().to_owned();
+    if tenant.is_empty() {
+        None
+    } else {
+        Some(tenant)
+    }
+}
+
 /// Message signed to bind a payer openid to a cashier capability token.
 ///
 /// Defined here because two independent services must agree on it byte for byte:
@@ -416,10 +442,7 @@ fn cashier_secret_scope_tenant(tenant_id: &str) -> &str {
     }
 }
 
-fn cashier_secret_wrap_key(
-    kek: &[u8],
-    tenant_id: &str,
-) -> Result<[u8; 32], CashierTokenError> {
+fn cashier_secret_wrap_key(kek: &[u8], tenant_id: &str) -> Result<[u8; 32], CashierTokenError> {
     if kek.len() < MIN_MASTER_KEY_LEN {
         return Err(CashierTokenError::SecretUnavailable);
     }
@@ -561,10 +584,10 @@ mod tests {
 
     #[test]
     fn rotating_the_epoch_changes_the_tenant_key() {
-        let epoch_one = derive_cashier_token_key_with_epoch(SECRET, "100001", 1)
-            .expect("epoch 1 key");
-        let epoch_two = derive_cashier_token_key_with_epoch(SECRET, "100001", 2)
-            .expect("epoch 2 key");
+        let epoch_one =
+            derive_cashier_token_key_with_epoch(SECRET, "100001", 1).expect("epoch 1 key");
+        let epoch_two =
+            derive_cashier_token_key_with_epoch(SECRET, "100001", 2).expect("epoch 2 key");
         assert_ne!(epoch_one, epoch_two);
         // The same epoch must stay stable across calls.
         assert_eq!(
@@ -629,8 +652,7 @@ mod tests {
             "expiresAt": 1_700_000_900_i64,
             "tokenId": "jti-legacy"
         });
-        let claims: CashierTokenClaims =
-            serde_json::from_value(payload).expect("legacy payload");
+        let claims: CashierTokenClaims = serde_json::from_value(payload).expect("legacy payload");
         assert_eq!(claims.epoch, CASHIER_TOKEN_EPOCH_DEFAULT);
     }
 
