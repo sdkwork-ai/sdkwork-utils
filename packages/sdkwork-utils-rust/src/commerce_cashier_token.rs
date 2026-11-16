@@ -267,6 +267,12 @@ pub fn peek_cashier_token_epoch(token: &str) -> i64 {
     let Some(encoded_payload) = token.split('.').nth(1) else {
         return CASHIER_TOKEN_EPOCH_DEFAULT;
     };
+    // Bound the pre-verification decode the same way `verify_cashier_token`
+    // bounds the payload, so a hostile oversized token cannot force unbounded
+    // base64/JSON work before the signature check.
+    if encoded_payload.is_empty() || encoded_payload.len() > MAX_PAYLOAD_LEN {
+        return CASHIER_TOKEN_EPOCH_DEFAULT;
+    }
     let Some(bytes) = base64url_decode(encoded_payload) else {
         return CASHIER_TOKEN_EPOCH_DEFAULT;
     };
