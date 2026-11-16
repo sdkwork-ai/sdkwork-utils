@@ -79,10 +79,36 @@ pub fn build_commerce_cashier_url_with_base(
         .filter(|value| !value.is_empty())
         .map(str::to_owned)
         .unwrap_or_else(commerce_cashier_base_url);
+    // The legacy link carries an order id and a merchant trade number. Both are
+    // token components: encode them so an out-trade number containing `&`, `#`,
+    // `?` or whitespace cannot truncate or reshape the generated QR URL.
     format!(
         "{}/cashier/{}?scene={}&outTradeNo={}",
-        base, order_id, scene, out_trade_no
+        base,
+        encode_url_component(order_id),
+        encode_url_component(scene),
+        encode_url_component(out_trade_no)
     )
+}
+
+/// Percent-encodes a URL path/query component using the RFC 3986 unreserved set.
+///
+/// Kept local (no extra dependency) because the cashier URL is the only place in
+/// this crate that builds query strings from caller-supplied text.
+fn encode_url_component(value: &str) -> String {
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value.as_bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                encoded.push(*byte as char);
+            }
+            _ => {
+                encoded.push('%');
+                encoded.push_str(&format!("{byte:02X}"));
+            }
+        }
+    }
+    encoded
 }
 
 /// Build the anonymous cashier deep-link for a signed capability token.
@@ -203,6 +229,36 @@ mod tests {
         let url = build_commerce_cashier_url_with_base("recharge", "ORD-1", "OT-1", Some("  "));
         assert!(url.contains("/cashier/ORD-1"));
         assert!(url.starts_with("https://"));
+    }
+
+    #[test]
+    fn legacy_cashier_url_percent_encodes_trade_numbers_and_order_ids() {
+        let url = build_commerce_cashier_url_with_base(
+            "virtual",
+            "ORD/1",
+            "OT&1 #2?x=1",
+            Some("https://h5.example.com/"),
+        );
+        // Query separators must not survive inside the bound trade number, and
+        // the path segment must not introduce a second path component.
+        assert_eq!(
+            "https://h5.example.com/cashier/ORD%2F1?scene=virtual&outTradeNo=OT%261%20%232%3Fx%3D1",
+            url
+        );
+    }
+
+    #[test]
+    fn legacy_cashier_url_keeps_unreserved_trade_numbers_readable() {
+        let url = build_commerce_cashier_url_with_base(
+            "recharge",
+            "ORD-1",
+            "MEMBERSHIP88d35e114d97f6e5",
+            Some("https://h5.example.com"),
+        );
+        assert_eq!(
+            "https://h5.example.com/cashier/ORD-1?scene=recharge&outTradeNo=MEMBERSHIP88d35e114d97f6e5",
+            url
+        );
     }
 
     #[test]
