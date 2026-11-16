@@ -29,7 +29,10 @@
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use serde::{Deserialize, Serialize};
 
-use crate::crypto::{derive_aes_256_key, hmac_sha256_base64url, verify_hmac_sha256_base64url};
+use crate::crypto::{
+    aes_gcm_decrypt, aes_gcm_encrypt, derive_aes_256_key, hmac_sha256_base64url, sha256_hash,
+    verify_hmac_sha256_base64url,
+};
 use crate::encoding::base64url_decode;
 
 /// Current token wire version. The prefix participates in the signature domain.
@@ -186,6 +189,12 @@ pub enum CashierTokenError {
     MissingClaim(&'static str),
     /// Master key material is shorter than [`MIN_MASTER_KEY_LEN`].
     WeakKeyMaterial,
+    /// The sealed signing secret could not be opened (wrong wrap key, wrong
+    /// tenant scope, or tampered ciphertext).
+    SecretIntegrity,
+    /// No key-encryption key is configured, so a stored signing secret cannot
+    /// be sealed or opened.
+    SecretUnavailable,
 }
 
 impl std::fmt::Display for CashierTokenError {
@@ -200,6 +209,12 @@ impl std::fmt::Display for CashierTokenError {
             Self::Expired => formatter.write_str("cashier token has expired"),
             Self::MissingClaim(claim) => write!(formatter, "cashier token claim {claim} is empty"),
             Self::WeakKeyMaterial => formatter.write_str("cashier token key material is too short"),
+            Self::SecretIntegrity => {
+                formatter.write_str("cashier token signing secret failed integrity")
+            }
+            Self::SecretUnavailable => {
+                formatter.write_str("cashier token signing secret is unavailable")
+            }
         }
     }
 }
@@ -316,6 +331,105 @@ pub fn cashier_token_secret_from_env() -> Result<Option<Vec<u8>>, CashierTokenEr
         return Err(CashierTokenError::WeakKeyMaterial);
     }
     Ok(Some(trimmed.as_bytes().to_vec()))
+}
+
+/// HKDF salt isolating the database-secret wrap key from every other key.
+const CASHIER_TOKEN_SECRET_SEAL_SALT: &[u8] = b"sdkwork.commerce.cashier-token.secret.v1";
+
+/// Algorithm identifier stored next to a sealed cashier signing secret.
+///
+/// [`CASHIER_TOKEN_SECRET_ENV`] is the **key-encryption key** (KEK) for the
+/// signing secrets the payment center generates and stores in
+/// `commerce_payment_cashier_token_setting`; once a database secret exists the
+/// deployment value is no longer used as the signing key itself.
+pub const CASHIER_TOKEN_SECRET_SEAL_ALGORITHM: &str = "aes256gcm-hkdf-cashier-secret-v1";
+
+/// A cashier signing secret sealed for exactly one tenant scope.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SealedCashierTokenSecret {
+    /// `base64(nonce || AES-256-GCM ciphertext)`.
+    pub ciphertext: String,
+    /// Identifier of the wrap key that produced [`Self::ciphertext`].
+    pub encryption_key_id: String,
+    /// Algorithm identifier, [`CASHIER_TOKEN_SECRET_SEAL_ALGORITHM`].
+    pub encryption_algorithm: String,
+    /// SHA-256 of the plaintext, for audit/verification without decryption.
+    pub fingerprint_sha256: String,
+}
+
+/// Returns the wrap-key identifier recorded with a sealed secret.
+#[must_use]
+pub fn cashier_token_secret_key_id(kek: &[u8]) -> String {
+    format!("cashier-{}", &sha256_hash(kek)[..16])
+}
+
+/// Seals a generated signing secret for storage in the payment database.
+///
+/// The scope tenant is part of the HKDF info, so a ciphertext sealed for one
+/// tenant cannot be opened under another tenant's scope even with the same KEK.
+pub fn seal_cashier_token_secret(
+    kek: &[u8],
+    tenant_id: &str,
+    secret: &[u8],
+) -> Result<SealedCashierTokenSecret, CashierTokenError> {
+    if secret.is_empty() {
+        return Err(CashierTokenError::InvalidPayload);
+    }
+    let key = cashier_secret_wrap_key(kek, tenant_id)?;
+    let ciphertext =
+        aes_gcm_encrypt(&key, secret).map_err(|_| CashierTokenError::SecretIntegrity)?;
+    Ok(SealedCashierTokenSecret {
+        ciphertext,
+        encryption_key_id: cashier_token_secret_key_id(kek),
+        encryption_algorithm: CASHIER_TOKEN_SECRET_SEAL_ALGORITHM.to_owned(),
+        fingerprint_sha256: sha256_hash(secret),
+    })
+}
+
+/// Opens a signing secret sealed by [`seal_cashier_token_secret`].
+///
+/// Fails closed when the recorded key id or algorithm does not belong to this
+/// deployment KEK, so a stolen database row cannot be replayed against another
+/// installation.
+pub fn open_cashier_token_secret(
+    kek: &[u8],
+    tenant_id: &str,
+    ciphertext: &str,
+    encryption_key_id: &str,
+    encryption_algorithm: &str,
+) -> Result<Vec<u8>, CashierTokenError> {
+    if encryption_algorithm != CASHIER_TOKEN_SECRET_SEAL_ALGORITHM
+        || encryption_key_id != cashier_token_secret_key_id(kek)
+    {
+        return Err(CashierTokenError::SecretUnavailable);
+    }
+    let key = cashier_secret_wrap_key(kek, tenant_id)?;
+    aes_gcm_decrypt(&key, ciphertext).map_err(|_| CashierTokenError::SecretIntegrity)
+}
+
+fn cashier_secret_scope_tenant(tenant_id: &str) -> &str {
+    let tenant = tenant_id.trim();
+    if tenant.is_empty() {
+        "0"
+    } else {
+        tenant
+    }
+}
+
+fn cashier_secret_wrap_key(
+    kek: &[u8],
+    tenant_id: &str,
+) -> Result<[u8; 32], CashierTokenError> {
+    if kek.len() < MIN_MASTER_KEY_LEN {
+        return Err(CashierTokenError::SecretUnavailable);
+    }
+    let tenant = cashier_secret_scope_tenant(tenant_id);
+    let info = format!("tenant={tenant};purpose=cashier-token-secret");
+    Ok(derive_aes_256_key(
+        kek,
+        CASHIER_TOKEN_SECRET_SEAL_SALT,
+        info.as_bytes(),
+    ))
 }
 
 /// Mints a cashier capability token.
@@ -688,6 +802,86 @@ mod tests {
         assert_eq!(
             verify_cashier_token(&token, &foreign_key, 1_700_000_100, CASHIER_TOKEN_AUDIENCE),
             Err(CashierTokenError::InvalidSignature)
+        );
+    }
+
+    #[test]
+    fn seals_and_opens_a_signing_secret_per_tenant() {
+        let kek = [9_u8; 64];
+        let sealed =
+            seal_cashier_token_secret(&kek, "100001", b"generated-signing-secret").expect("seal");
+        assert!(!sealed.ciphertext.contains("generated-signing-secret"));
+        assert_eq!(
+            sealed.encryption_algorithm,
+            CASHIER_TOKEN_SECRET_SEAL_ALGORITHM
+        );
+        assert_eq!(sealed.encryption_key_id, cashier_token_secret_key_id(&kek));
+        let opened = open_cashier_token_secret(
+            &kek,
+            "100001",
+            &sealed.ciphertext,
+            &sealed.encryption_key_id,
+            &sealed.encryption_algorithm,
+        )
+        .expect("open");
+        assert_eq!(opened, b"generated-signing-secret");
+    }
+
+    #[test]
+    fn sealed_secret_is_scope_bound_to_its_tenant() {
+        let kek = [10_u8; 64];
+        let sealed = seal_cashier_token_secret(&kek, "100001", b"tenant-secret").expect("seal");
+        assert_eq!(
+            open_cashier_token_secret(
+                &kek,
+                "200002",
+                &sealed.ciphertext,
+                &sealed.encryption_key_id,
+                &sealed.encryption_algorithm,
+            ),
+            Err(CashierTokenError::SecretIntegrity)
+        );
+        // The platform scope is the empty/`0` tenant.
+        let platform =
+            seal_cashier_token_secret(&kek, "0", b"platform-secret").expect("platform seal");
+        assert!(open_cashier_token_secret(
+            &kek,
+            "",
+            &platform.ciphertext,
+            &platform.encryption_key_id,
+            &platform.encryption_algorithm,
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn a_foreign_key_or_algorithm_cannot_open_a_sealed_secret() {
+        let kek = [11_u8; 64];
+        let sealed = seal_cashier_token_secret(&kek, "100001", b"tenant-secret").expect("seal");
+        let foreign = [12_u8; 64];
+        assert_eq!(
+            open_cashier_token_secret(
+                &foreign,
+                "100001",
+                &sealed.ciphertext,
+                &sealed.encryption_key_id,
+                &sealed.encryption_algorithm,
+            ),
+            Err(CashierTokenError::SecretUnavailable)
+        );
+        assert_eq!(
+            open_cashier_token_secret(
+                &kek,
+                "100001",
+                &sealed.ciphertext,
+                &sealed.encryption_key_id,
+                "plaintext",
+            ),
+            Err(CashierTokenError::SecretUnavailable)
+        );
+        assert_eq!(
+            seal_cashier_token_secret(&[1_u8; 16], "100001", b"short-kek"),
+            Err(CashierTokenError::SecretUnavailable)
         );
     }
 }
