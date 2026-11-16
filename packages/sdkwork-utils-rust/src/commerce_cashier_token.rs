@@ -534,8 +534,7 @@ pub fn decrypt_cashier_short_link_token(
     ciphertext: &str,
 ) -> Result<String, CashierTokenError> {
     let key = derive_cashier_short_link_key(master_key, tenant_id, epoch)?;
-    let bytes =
-        aes_gcm_decrypt(&key, ciphertext).map_err(|_| CashierTokenError::InvalidPayload)?;
+    let bytes = aes_gcm_decrypt(&key, ciphertext).map_err(|_| CashierTokenError::InvalidPayload)?;
     String::from_utf8(bytes).map_err(|_| CashierTokenError::InvalidPayload)
 }
 

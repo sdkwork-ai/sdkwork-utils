@@ -144,10 +144,7 @@ pub fn build_commerce_cashier_token_url_with_base(
         .filter(|value| !value.is_empty())
         .map(str::to_owned)
         .unwrap_or_else(commerce_cashier_base_url);
-    Some(format!(
-        "{base}/cashier/{}",
-        encode_url_component(token)
-    ))
+    Some(format!("{base}/cashier/{}", encode_url_component(token)))
 }
 
 /// Returns true when a normalized provider webhook status indicates payment success.
@@ -293,11 +290,9 @@ mod tests {
     fn token_cashier_url_encodes_a_non_base64url_path_segment() {
         // Current tokens are base64url and unchanged by the encoder; a future
         // token shape with a path separator must still stay one path segment.
-        let url = build_commerce_cashier_token_url_with_base(
-            "v1.a/b",
-            Some("https://h5.example.com"),
-        )
-        .expect("token url");
+        let url =
+            build_commerce_cashier_token_url_with_base("v1.a/b", Some("https://h5.example.com"))
+                .expect("token url");
         assert_eq!("https://h5.example.com/cashier/v1.a%2Fb", url);
     }
 

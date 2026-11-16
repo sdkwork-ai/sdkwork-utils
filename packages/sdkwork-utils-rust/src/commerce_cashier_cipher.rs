@@ -167,11 +167,11 @@ pub fn install_local_file_cashier_signing_key_cipher_from_env() -> Result<(), St
     if cashier_signing_key_cipher_is_installed() {
         return Ok(());
     }
-    let cipher: Arc<dyn CashierSigningKeyCipher> = match LocalFileCashierSigningKeyCipher::from_env()
-    {
-        Ok(cipher) => Arc::new(cipher),
-        Err(_) => Arc::new(UnavailableCashierSigningKeyCipher),
-    };
+    let cipher: Arc<dyn CashierSigningKeyCipher> =
+        match LocalFileCashierSigningKeyCipher::from_env() {
+            Ok(cipher) => Arc::new(cipher),
+            Err(_) => Arc::new(UnavailableCashierSigningKeyCipher),
+        };
     install_cashier_signing_key_cipher(cipher)
 }
 
