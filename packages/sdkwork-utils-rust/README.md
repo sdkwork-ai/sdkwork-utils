@@ -17,7 +17,9 @@ Platform services additionally expose:
 
 - `trusted_proxy`: forwarded-chain parsing against a trusted-proxy CIDR allow-list.
 - `serde_int64`: i64 wire serialization for the `API_SPEC` §13.6 int64-as-string contract.
+- `serde_query_int`: query-string integers for DTOs that flatten another list DTO, where `serde_urlencoded` hands the inner fields over as text.
 - `service_base_url`: the single backend base-URL and listener-bind resolver (see below).
+- `catalog_view`: the `category_code` / `role_codes` list filters every SDKWork catalog endpoint shares (see below).
 
 All items are re-exported from the crate root:
 
@@ -79,6 +81,37 @@ converts the embedded outcome into an actionable `BaseUrlUnavailable` error whos
 service and the two specs above.
 
 See `APP_SDK_INTEGRATION_SPEC.md` §5.2 and §7 in `sdkwork-specs` for the consumer-side contract.
+
+## `catalog_view` — the catalog list filters
+
+Every SDKWork catalog list endpoint (`plugins`, `skills`, `agents`, `mcp`, …) accepts the same two
+filters. The vocabulary, the normalization, and the visibility predicate therefore live here once
+instead of in each owning application.
+
+```rust
+use sdkwork_utils_rust::{CatalogViewFilter, CatalogViewQuery};
+
+#[derive(serde::Deserialize)]
+struct ListQuery {
+    #[serde(flatten)]
+    catalog: CatalogViewQuery,
+}
+
+let query: ListQuery = serde_urlencoded::from_str("category_code=coding&role_codes=org_admin")?;
+let filter = query.catalog.to_filter();
+assert!(filter.allows(Some("coding"), &[]));
+```
+
+- `category_code` selects one registry category; `all`, `全部`, or a blank value keeps every category.
+- `role_codes` is a comma-separated IAM role scope; empty is the "all data" view, and a populated
+  scope keeps records naming one of those roles **plus** records whose `allowed_role_codes` is empty
+  (empty means "every role" in every catalog table).
+- A store-level implementation binds `category_code()` / `role_codes()` into its query instead of
+  calling `allows`; both paths share this module's normalization, so they cannot drift.
+
+Adding a catalog to a new domain is additive: embed `CatalogViewQuery`, then either call
+`CatalogViewFilter::allows` per row or bind the two normalized values into the store predicate.
+No change to this module is required, which is the extension point the catalogs share.
 
 ## Configuration
 

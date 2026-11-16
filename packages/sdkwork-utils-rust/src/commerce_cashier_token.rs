@@ -27,6 +27,7 @@
 //! payment authorization is about the order, not about who the payer is.
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use rand::RngCore;
 use serde::{Deserialize, Serialize};
 
 use crate::crypto::{
@@ -455,6 +456,89 @@ fn cashier_secret_wrap_key(kek: &[u8], tenant_id: &str) -> Result<[u8; 32], Cash
     ))
 }
 
+/// Wire prefix of a short cashier link segment (`s1.<22 base64url chars>`).
+pub const CASHIER_SHORT_LINK_PREFIX: &str = "s1.";
+
+/// Base64url length of the 128-bit short id.
+pub const CASHIER_SHORT_LINK_ID_LEN: usize = 22;
+
+/// HKDF salt isolating the short-link encryption key from the signing key.
+const CASHIER_SHORT_LINK_SALT: &[u8] = b"sdkwork.commerce.cashier-short-link.v1";
+
+/// True when a path segment is a short cashier link id.
+#[must_use]
+pub fn is_cashier_short_link_segment(segment: &str) -> bool {
+    let Some(id) = segment.trim().strip_prefix(CASHIER_SHORT_LINK_PREFIX) else {
+        return false;
+    };
+    id.len() == CASHIER_SHORT_LINK_ID_LEN
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+}
+
+/// Builds the wire segment for a short id.
+#[must_use]
+pub fn cashier_short_link_segment(short_id: &str) -> String {
+    format!("{CASHIER_SHORT_LINK_PREFIX}{short_id}")
+}
+
+/// Generates a 128-bit short id (22 base64url chars).
+#[must_use]
+pub fn generate_cashier_short_link_id() -> String {
+    let mut bytes = [0_u8; 16];
+    rand::thread_rng().fill_bytes(&mut bytes);
+    URL_SAFE_NO_PAD.encode(bytes)
+}
+
+/// Derives the AES-256 key that encrypts the real signed token in the short-link
+/// mapping. A separate HKDF salt/info keeps it independent of the HMAC signing
+/// key even though both derive from the same deployment secret.
+pub fn derive_cashier_short_link_key(
+    master_key: &[u8],
+    tenant_id: &str,
+    epoch: i64,
+) -> Result<[u8; 32], CashierTokenError> {
+    if master_key.len() < MIN_MASTER_KEY_LEN {
+        return Err(CashierTokenError::WeakKeyMaterial);
+    }
+    let tenant_id = tenant_id.trim();
+    if tenant_id.is_empty() {
+        return Err(CashierTokenError::MissingClaim("tenantId"));
+    }
+    let epoch = epoch.max(CASHIER_TOKEN_EPOCH_DEFAULT);
+    let info = format!("tenant={tenant_id};epoch={epoch};purpose=cashier-short-link");
+    Ok(derive_aes_256_key(
+        master_key,
+        CASHIER_SHORT_LINK_SALT,
+        info.as_bytes(),
+    ))
+}
+
+/// Encrypts the real signed token for the short-link mapping (AES-256-GCM).
+pub fn encrypt_cashier_short_link_token(
+    master_key: &[u8],
+    tenant_id: &str,
+    epoch: i64,
+    token: &str,
+) -> Result<String, CashierTokenError> {
+    let key = derive_cashier_short_link_key(master_key, tenant_id, epoch)?;
+    aes_gcm_encrypt(&key, token.as_bytes()).map_err(|_| CashierTokenError::InvalidPayload)
+}
+
+/// Decrypts a stored short-link token (AES-256-GCM).
+pub fn decrypt_cashier_short_link_token(
+    master_key: &[u8],
+    tenant_id: &str,
+    epoch: i64,
+    ciphertext: &str,
+) -> Result<String, CashierTokenError> {
+    let key = derive_cashier_short_link_key(master_key, tenant_id, epoch)?;
+    let bytes =
+        aes_gcm_decrypt(&key, ciphertext).map_err(|_| CashierTokenError::InvalidPayload)?;
+    String::from_utf8(bytes).map_err(|_| CashierTokenError::InvalidPayload)
+}
+
 /// Mints a cashier capability token.
 ///
 /// `secret` is the tenant-scoped signing key. Callers in production MUST NOT share
@@ -654,6 +738,31 @@ mod tests {
         });
         let claims: CashierTokenClaims = serde_json::from_value(payload).expect("legacy payload");
         assert_eq!(claims.epoch, CASHIER_TOKEN_EPOCH_DEFAULT);
+    }
+
+    #[test]
+    fn short_link_segment_shape() {
+        let id = generate_cashier_short_link_id();
+        assert_eq!(id.len(), CASHIER_SHORT_LINK_ID_LEN);
+        let segment = cashier_short_link_segment(&id);
+        assert!(is_cashier_short_link_segment(&segment));
+        assert!(!is_cashier_short_link_segment("v1.abc.def"));
+        assert!(!is_cashier_short_link_segment("s1.short"));
+        assert!(!is_cashier_short_link_segment("s1."));
+    }
+
+    #[test]
+    fn short_link_token_round_trips_per_tenant_epoch() {
+        let token = "v1.payload.signature";
+        let ciphertext =
+            encrypt_cashier_short_link_token(SECRET, "100001", 3, token).expect("encrypt");
+        assert_eq!(
+            decrypt_cashier_short_link_token(SECRET, "100001", 3, &ciphertext).expect("decrypt"),
+            token
+        );
+        // A different tenant or epoch derives a different key and must fail.
+        assert!(decrypt_cashier_short_link_token(SECRET, "100001", 2, &ciphertext).is_err());
+        assert!(decrypt_cashier_short_link_token(SECRET, "200002", 3, &ciphertext).is_err());
     }
 
     #[test]

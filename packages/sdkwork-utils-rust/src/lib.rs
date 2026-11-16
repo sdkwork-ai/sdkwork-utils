@@ -3,6 +3,7 @@
 pub mod bloom;
 pub mod boolean;
 pub mod bytes;
+pub mod catalog_view;
 pub mod collection;
 pub mod command_headers;
 pub mod commerce_cashier_cipher;
@@ -27,6 +28,7 @@ pub mod process;
 pub mod rate_limit;
 pub mod result;
 pub mod serde_int64;
+pub mod serde_query_int;
 pub mod serde_uint64;
 pub mod service_base_url;
 pub mod string;
@@ -37,6 +39,7 @@ pub mod validation;
 pub use bloom::*;
 pub use boolean::*;
 pub use bytes::*;
+pub use catalog_view::*;
 pub use collection::*;
 pub use command_headers::*;
 pub use commerce_cashier_cipher::*;
@@ -57,10 +60,12 @@ pub use optional::*;
 pub use path::*;
 pub use platform::*;
 pub use result::*;
-// serde_int64 and serde_uint64 are intentionally NOT glob-reexported.
-// They export conflicting `serialize`/`deserialize`/`option` names and are
-// designed to be used via their full module path as serde `with` attributes:
+// serde_int64, serde_uint64 and serde_query_int are intentionally NOT
+// glob-reexported. They export conflicting `serialize`/`deserialize`/`option`/
+// `i32` names and are designed to be used via their full module path as serde
+// `with` / `deserialize_with` attributes:
 //   #[serde(with = "sdkwork_utils_rust::serde_int64")]
+//   #[serde(default, deserialize_with = "sdkwork_utils_rust::serde_query_int::option_i32")]
 pub use decimal_math::*;
 pub use service_base_url::*;
 pub use string::*;
