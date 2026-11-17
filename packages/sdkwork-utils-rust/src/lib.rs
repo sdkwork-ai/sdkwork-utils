@@ -3,6 +3,7 @@
 pub mod bloom;
 pub mod boolean;
 pub mod bytes;
+pub mod caller_identity;
 pub mod catalog_view;
 pub mod collection;
 pub mod command_headers;
@@ -39,6 +40,7 @@ pub mod validation;
 pub use bloom::*;
 pub use boolean::*;
 pub use bytes::*;
+pub use caller_identity::*;
 pub use catalog_view::*;
 pub use collection::*;
 pub use command_headers::*;
