@@ -32,6 +32,7 @@ pub mod serde_int64;
 pub mod serde_query_int;
 pub mod serde_uint64;
 pub mod service_base_url;
+pub mod service_identity;
 pub mod string;
 pub mod token_bank;
 pub mod trusted_proxy;
@@ -70,6 +71,7 @@ pub use result::*;
 //   #[serde(default, deserialize_with = "sdkwork_utils_rust::serde_query_int::option_i32")]
 pub use decimal_math::*;
 pub use service_base_url::*;
+pub use service_identity::*;
 pub use string::*;
 pub use token_bank::*;
 pub use trusted_proxy::*;
