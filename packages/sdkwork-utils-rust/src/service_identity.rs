@@ -117,10 +117,7 @@ mod tests {
         assert_eq!(
             credentials.wire_headers(ServiceTokenKind::Ingress),
             vec![
-                (
-                    SERVICE_INGRESS_TOKEN_HEADER,
-                    "ingress-token".to_owned()
-                ),
+                (SERVICE_INGRESS_TOKEN_HEADER, "ingress-token".to_owned()),
                 (SERVICE_ACCESS_TOKEN_HEADER, "access-token".to_owned()),
             ]
         );
